@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // Base path: '/' for local dev, '/pulse-pwa/' for GitHub Pages
 // Change 'pulse-pwa' to match your actual GitHub repo name
-const base = process.env.GITHUB_ACTIONS ? '/pulse-pwa/' : '/'
+const base = '/'
 
 export default defineConfig({
   base,
