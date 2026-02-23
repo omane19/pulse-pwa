@@ -16,12 +16,21 @@ export default function Setup({ onDone }) {
   const [avInput, setAvInput] = useState('')
   const [saved, setSaved] = useState(false)
 
+
+// Auto-skip setup if keys already exist (from Vercel or localStorage)
+useEffect(() => {
+  const fh = getKey('VITE_FINNHUB_KEY')
+  if (validateKey(fh)) {
+    onDone()   // jump straight to dashboard
+  }
+}, [])
+
   // Load existing keys on mount
   useEffect(() => {
     const fh = getKey('VITE_FINNHUB_KEY')
     const av = getKey('VITE_AV_KEY')
-    if (fh) setFhInput(fh)
-    if (av) setAvInput(av)
+  //  if (fh) setFhInput(fh)
+  //  if (av) setAvInput(av)
   }, [])
 
   const fhOk = validateKey(fhInput)
