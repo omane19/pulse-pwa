@@ -577,5 +577,6 @@ export default function DeepDive({ initialTicker }) {
       )}
       {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
     </div>
+    </PullToRefresh>
   )
 }
