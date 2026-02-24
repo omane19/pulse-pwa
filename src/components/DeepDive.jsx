@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
-import { useTickerData } from '../hooks/useApi.js'
+import React, { useState, useEffect, useCallback } from 'react'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
+import { saveSignal, getTickerHistory } from '../hooks/useSignalHistory.js'
 import Chart from './Chart.jsx'
-import { VerdictPill, FactorBars, MetricCell, NewsCard, EarningsWarning, LoadingBar, SectionHeader, Toast } from './shared.jsx'
+import { VerdictPill, FactorBars, MetricCell, NewsCard, EarningsWarning, LoadingBar, SectionHeader, Toast, PullToRefresh } from './shared.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'
 
@@ -25,6 +26,174 @@ function getFlags(news, scoredNews, insider, quote) {
     flags.push({ title:'⚠ High Sentiment on Low-Price Stock',
       body:`Strong positive coverage on sub-$20 stock — matches pump-and-dump profile. Extra caution.` })
   return flags
+}
+
+
+/* ── Chart Explainer ────────────────────────────────────────────── */
+function ChartExplainer({ result, ma50, price }) {
+  const rsi = result.mom?.rsi
+  const mom1m = result.mom?.['1m']
+  const mom3m = result.mom?.['3m']
+  const aboveMA = price && ma50 ? price > ma50 : null
+
+  const signals = []
+  if (aboveMA !== null) signals.push({
+    icon: aboveMA ? '📈' : '📉',
+    label: `${aboveMA ? 'Above' : 'Below'} 50-Day MA`,
+    detail: aboveMA
+      ? `Price ($${price?.toFixed(2)}) is above the 50-day average ($${ma50}). The MA acts as dynamic support — as long as price stays above it, the trend is intact. A close below MA50 is a warning signal.`
+      : `Price ($${price?.toFixed(2)}) is below the 50-day average ($${ma50}). The MA is acting as resistance. The trend is not confirmed — wait for a sustained close above $${ma50} before buying.`,
+    color: aboveMA ? '#00C805' : '#FF5000'
+  })
+  if (rsi != null) signals.push({
+    icon: rsi > 70 ? '🔴' : rsi < 30 ? '🟢' : '🟡',
+    label: `RSI ${rsi} — ${rsi > 70 ? 'Overbought' : rsi < 30 ? 'Oversold' : 'Neutral'}`,
+    detail: rsi > 70
+      ? `RSI above 70 means the stock has moved up quickly and may be due for a pause or pullback. This doesn't mean sell immediately, but avoid chasing. Options buyers: premiums are elevated here.`
+      : rsi < 30
+      ? `RSI below 30 means the stock is oversold — sellers may be exhausted. Often signals a bounce opportunity, but can stay oversold in strong downtrends. Look for price stabilisation before entering.`
+      : `RSI in the 30–70 range is healthy — no extreme readings. The move has room to continue in either direction. Not a timing signal on its own.`,
+    color: rsi > 70 ? '#FF5000' : rsi < 30 ? '#00C805' : '#FFD700'
+  })
+  if (mom1m != null) signals.push({
+    icon: mom1m > 5 ? '🚀' : mom1m < -5 ? '⚠️' : '➡️',
+    label: `1-Month: ${mom1m > 0 ? '+' : ''}${mom1m}%`,
+    detail: mom1m > 10
+      ? `Strong 1-month gain. Momentum is working in your favour if you're already in. As a new entry point, be aware you may be buying after the move — look for a pullback to the MA for a better entry.`
+      : mom1m > 0
+      ? `Modest positive momentum — price is rising steadily. This is a healthy pace, not a blow-off top. Supports the current trend.`
+      : mom1m > -10
+      ? `Slight decline over the past month. Not a crash, but trend is under pressure. Watch the 50-day MA as the key line — if it holds, this could be a buying opportunity.`
+      : `Significant 1-month loss. High-risk entry here. If you want in, wait for signs of stabilisation (RSI < 35, price holds a key level for 2–3 days) before committing.`,
+    color: mom1m > 0 ? '#00C805' : '#FF5000'
+  })
+  if (mom3m != null) signals.push({
+    icon: mom3m > 0 ? '📊' : '📉',
+    label: `3-Month: ${mom3m > 0 ? '+' : ''}${mom3m}%`,
+    detail: mom3m > 20
+      ? `Exceptional 3-month run. Institutions have been accumulating. This kind of move often pauses but the underlying trend is strong.`
+      : mom3m > 0
+      ? `Positive 3-month trend confirms the medium-term uptrend. Dips toward the 50-day MA are likely buy opportunities in an uptrend like this.`
+      : `Negative 3-month trend — the medium-term trend is down. Even if the stock bounces short-term, the broader trend is working against buyers. Requires a thesis change or trend reversal signal.`,
+    color: mom3m > 0 ? '#00C805' : '#FF5000'
+  })
+
+  return (
+    <div style={{ marginBottom:16 }}>
+      {signals.map((s, i) => (
+        <div key={i} style={{ display:'flex', gap:12, padding:'12px 14px', background:'#111', border:'1px solid #252525', borderRadius:10, marginBottom:8 }}>
+          <span style={{ fontSize:'1.1rem', flexShrink:0, lineHeight:1.4 }}>{s.icon}</span>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.64rem', fontWeight:700, color:s.color, marginBottom:4 }}>{s.label}</div>
+            <div style={{ fontSize:'0.76rem', color:'#B2B2B2', lineHeight:1.7 }}>{s.detail}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── Analyst History ────────────────────────────────────────────── */
+function AnalystHistory({ rec, price, avTarget }) {
+  const current = rec?.current || rec || {}
+  const history = rec?.history || (rec && Object.keys(rec).length ? [rec] : [])
+  if (!history.length && !avTarget) return null
+
+  const maxTotal = Math.max(...history.map(m => (m.strongBuy||0)+(m.buy||0)+(m.hold||0)+(m.sell||0)+(m.strongSell||0)), 1)
+
+  return (
+    <>
+      <SectionHeader>Analyst Ratings History</SectionHeader>
+
+      {/* Target price */}
+      {(avTarget || current.period) && (
+        <div style={{ display:'grid', gridTemplateColumns: avTarget ? '1fr 1fr' : '1fr', gap:8, marginBottom:12 }}>
+          {avTarget && (
+            <div style={{ background:'#111', border:'1px solid #252525', borderRadius:12, padding:'14px', textAlign:'center' }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#B2B2B2', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Analyst Price Target</div>
+              <div style={{ fontFamily:'var(--font-display)', fontSize:'1.4rem', fontWeight:800, color:'#00E5FF' }}>${parseFloat(avTarget).toFixed(2)}</div>
+              {price && <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.64rem', color: parseFloat(avTarget) > price ? '#00C805' : '#FF5000', marginTop:4 }}>
+                {parseFloat(avTarget) > price ? '▲' : '▼'} {Math.abs((parseFloat(avTarget)/price-1)*100).toFixed(1)}% from current
+              </div>}
+            </div>
+          )}
+          {current.period && (() => {
+            const sb=current.strongBuy||0, b=current.buy||0, h=current.hold||0, s=current.sell||0, ss=current.strongSell||0, tot=sb+b+h+s+ss
+            const bullPct = tot > 0 ? Math.round((sb + b*0.5) / tot * 100) : 0
+            return (
+              <div style={{ background:'#111', border:'1px solid #252525', borderRadius:12, padding:'14px', textAlign:'center' }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#B2B2B2', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Analyst Sentiment</div>
+                <div style={{ fontFamily:'var(--font-display)', fontSize:'1.4rem', fontWeight:800, color: bullPct > 60 ? '#00C805' : bullPct < 40 ? '#FF5000' : '#FFD700' }}>{bullPct}%</div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#B2B2B2', marginTop:4 }}>bullish ({tot} analysts)</div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* Monthly history bars */}
+      {history.length > 0 && (
+        <div style={{ background:'#111', border:'1px solid #252525', borderRadius:12, padding:'14px', marginBottom:12 }}>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#B2B2B2', letterSpacing:1, marginBottom:12 }}>MONTHLY BREAKDOWN — LAST {history.length} MONTHS</div>
+          {history.map((month, i) => {
+            const sb=month.strongBuy||0, b=month.buy||0, h=month.hold||0, s=month.sell||0, ss=month.strongSell||0
+            const tot = sb+b+h+s+ss
+            if (!tot) return null
+            const pct = (v) => Math.round(v/tot*100)
+            const d = new Date(month.period||Date.now())
+            const label = d.toLocaleDateString('en-US',{month:'short',year:'2-digit'})
+            return (
+              <div key={i} style={{ marginBottom:10 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+                  <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#B2B2B2' }}>{label}</span>
+                  <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#B2B2B2' }}>{tot} analysts</span>
+                </div>
+                {/* Stacked bar */}
+                <div style={{ display:'flex', height:20, borderRadius:4, overflow:'hidden', gap:1 }}>
+                  {sb > 0 && <div title={`Strong Buy: ${sb}`} style={{ flex:sb, background:'#00C805', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {pct(sb) >= 10 && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#000', fontWeight:700 }}>{pct(sb)}%</span>}
+                  </div>}
+                  {b > 0 && <div title={`Buy: ${b}`} style={{ flex:b, background:'#00C80580', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {pct(b) >= 10 && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#000', fontWeight:700 }}>{pct(b)}%</span>}
+                  </div>}
+                  {h > 0 && <div title={`Hold: ${h}`} style={{ flex:h, background:'#FFD700', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {pct(h) >= 10 && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#000', fontWeight:700 }}>{pct(h)}%</span>}
+                  </div>}
+                  {s > 0 && <div title={`Sell: ${s}`} style={{ flex:s, background:'#FF500080' }}>
+                    {pct(s) >= 10 && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#fff', fontWeight:700, padding:'0 2px' }}>{pct(s)}%</span>}
+                  </div>}
+                  {ss > 0 && <div title={`Strong Sell: ${ss}`} style={{ flex:ss, background:'#FF5000' }}>
+                    {pct(ss) >= 10 && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#fff', fontWeight:700, padding:'0 2px' }}>{pct(ss)}%</span>}
+                  </div>}
+                </div>
+                <div style={{ display:'flex', justifyContent:'space-between', marginTop:3 }}>
+                  <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.54rem', color:'#00C805' }}>
+                    {sb > 0 ? `${sb} SBuy ` : ''}{b > 0 ? `${b} Buy` : ''}
+                  </span>
+                  <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.54rem', color:'#FFD700' }}>{h > 0 ? `${h} Hold` : ''}</span>
+                  <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.54rem', color:'#FF5000' }}>
+                    {s > 0 ? `${s} Sell ` : ''}{ss > 0 ? `${ss} SSell` : ''}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+          <div style={{ display:'flex', gap:10, marginTop:8, flexWrap:'wrap' }}>
+            {[['#00C805','Strong Buy'],['#00C80580','Buy'],['#FFD700','Hold'],['#FF500080','Sell'],['#FF5000','Strong Sell']].map(([col, label]) => (
+              <span key={label} style={{ fontFamily:'var(--font-mono)', fontSize:'0.54rem', color:'#B2B2B2', display:'flex', alignItems:'center', gap:3 }}>
+                <span style={{ width:8, height:8, borderRadius:2, background:col, display:'inline-block' }}/>
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {history.length === 0 && !avTarget && (
+        <div style={{ color:'#B2B2B2', fontSize:'0.8rem', padding:'12px 0' }}>No analyst rating data available for this ticker.</div>
+      )}
+    </>
+  )
 }
 
 /* ── Analysis Brief ───────────────────────────────────────────── */
@@ -168,18 +337,81 @@ function VerdictCard({ result }) {
   )
 }
 
+/* ── Signal History Section ── */
+function SignalHistorySection({ ticker, currentPrice }) {
+  if (!ticker) return null
+  let history = []
+  try { history = getTickerHistory(ticker) } catch {}
+  if (!history.length) return null
+  const GREEN = '#00C805'; const RED = '#FF5000'; const GOLD = '#FFD700'; const G4 = '#252525'
+  return (
+    <>
+      <SectionHeader>Your Signal History — {ticker}</SectionHeader>
+      <div className="card" style={{ padding: '0 16px' }}>
+        {history.slice(0, 8).map((h, i) => {
+          const change = currentPrice && h.price ? ((currentPrice - h.price) / h.price * 100) : null
+          const color = h.verdict === 'BUY' ? GREEN : h.verdict === 'AVOID' ? RED : GOLD
+          const label = new Date(h.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          return (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < history.length - 1 ? `1px solid ${G4}` : 'none' }}>
+              <div>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color, marginRight: 8, fontWeight: 700 }}>{h.verdict}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: '#B2B2B2' }}>{label}</span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>Score {h.score}</div>
+                {change != null && (
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: change >= 0 ? GREEN : RED, marginTop: 2 }}>
+                    ${h.price?.toFixed(2)} → {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
-export default function DeepDive() {
-  const [input,  setInput]  = useState('AAPL')
+export default function DeepDive({ initialTicker }) {
+  const [input,  setInput]  = useState(initialTicker || 'AAPL')
   const [ticker, setTicker] = useState('')
   const {data, loading, error, fetch} = useTickerData()
   const {add, remove, has} = useWatchlist()
-  const [result, setResult] = useState(null)
-  const [toast,  setToast]  = useState(null)
+  const [result,      setResult]      = useState(null)
+  const [toast,       setToast]       = useState(null)
+  const [smartMoney,  setSmartMoney]  = useState(null)
 
-  useEffect(()=>{ if(data){ const r=scoreAsset(data.quote,data.candles,data.candles?.ma50,data.metrics,data.news,data.rec,data.earnings); setResult(r) }}, [data])
+  useEffect(() => {
+    if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
+  }, [initialTicker])
+
+  // Re-score whenever base data or smart money updates
+  useEffect(() => {
+    if (!data) return
+    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, smartMoney || undefined)
+    setResult(r)
+    saveSignal({ ticker: data.ticker, score: r.pct, verdict: r.verdict, price: data.quote?.c })
+  }, [data, smartMoney])
+
+  // Fetch FMP smart money in background
+  useEffect(() => {
+    if (!data?.ticker || !hasKeys().fmp) return
+    setSmartMoney(null)
+    Promise.all([fetchFMPCongressional(data.ticker), fetchFMPInsider(data.ticker)])
+      .then(([cong, ins]) => {
+        const recentInsiderBuys = ins.filter(t => t.isBuy && new Date(t.date) > new Date(Date.now() - 90*86400000)).length
+        const recentCongBuys    = cong.filter(t => t.isBuy).length
+        const cluster = computeClusterSignal(ins)
+        setSmartMoney({ insiderBuys: recentInsiderBuys, congressBuys: recentCongBuys, cluster, rawInsider: ins, rawCongress: cong })
+      })
+      .catch(() => {})
+  }, [data?.ticker])
 
   const handleAnalyze=()=>{ const t=input.trim().toUpperCase(); if(!t)return; setTicker(t); fetch(t) }
+  const handleRefresh = useCallback(async () => { if(ticker) { await fetch(ticker) } }, [ticker, fetch])
   const handleWL=()=>{ if(has(ticker)){remove(ticker);setToast(`Removed ${ticker}`)}else{add(ticker);setToast(`Added ${ticker} to watchlist`)} }
 
   const q=data?.quote; const price=q?.c; const chg=q?.dp||0
@@ -188,6 +420,7 @@ export default function DeepDive() {
   const flags=data&&result?getFlags(data.news,result.scoredNews||[],data.insider||[],data.quote):[]
 
   return (
+    <PullToRefresh onRefresh={handleRefresh} enabled={!!ticker}>
     <div className="page">
       <div style={{display:'flex',gap:8,marginBottom:10}}>
         <input className="input" value={input} onChange={e=>setInput(e.target.value.toUpperCase())}
@@ -244,6 +477,14 @@ export default function DeepDive() {
 
           <VerdictCard result={result}/>
 
+          {data.candles && (
+            <>
+              <SectionHeader>Price Chart · 60 Days</SectionHeader>
+              <Chart candles={data.candles} ma50={ma50} color={color} ticker={ticker}/>
+              <ChartExplainer result={result} ma50={ma50} price={price} />
+            </>
+          )}
+
           <SectionHeader>Analysis Brief</SectionHeader>
           <AnalysisBrief ticker={ticker} company={data.profile?.name||ticker} sector={data.profile?.finnhubIndustry||''} price={price} result={result} ma50={ma50} metrics={mt} news={data.news} rec={data.rec} earn={data.earnings} insider={data.insider||[]}/>
 
@@ -269,17 +510,11 @@ export default function DeepDive() {
             </div></>
           )}
 
-          {data.candles&&(<><SectionHeader>Chart · 60 Days</SectionHeader><Chart candles={data.candles} ma50={ma50} color={color} ticker={ticker}/></>)}
 
           <SectionHeader>6-Factor Breakdown</SectionHeader>
           <div className="card"><FactorBars scores={result.scores}/></div>
 
-          {data.rec&&Object.keys(data.rec).length>0&&(
-            <><SectionHeader>Wall Street Consensus</SectionHeader>
-            <div className="metrics-grid">
-              {['strongBuy','buy','hold','sell','strongSell'].map(k=><MetricCell key={k} label={k.replace(/([A-Z])/g,' $1').trim()} value={String(data.rec[k]||0)}/>)}
-            </div></>
-          )}
+          <AnalystHistory rec={data.rec} price={price} avTarget={av.targetPrice} />
 
           {data.earnings?.length>0&&(
             <><SectionHeader>Earnings History</SectionHeader>
@@ -328,6 +563,7 @@ export default function DeepDive() {
               :<div style={{color:'#B2B2B2',textAlign:'center',padding:24,fontSize:'0.84rem'}}>No news in past 10 days.</div>}
           </div>
           <div style={{height:16}}/>
+          <SignalHistorySection ticker={ticker} currentPrice={price} />
         </>
       )}
 

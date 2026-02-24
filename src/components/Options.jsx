@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useTickerData } from '../hooks/useApi.js'
 import { scoreAsset } from '../utils/scoring.js'
 import { OPTIONS_STRATEGIES, TICKER_NAMES } from '../utils/constants.js'
-import { EarningsWarning, LoadingBar, SectionHeader } from './shared.jsx'
+import { EarningsWarning, LoadingBar, SectionHeader, PullToRefresh } from './shared.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
@@ -41,10 +41,112 @@ function StratCard({ strat }) {
         </div>
       )}
     </div>
+    </PullToRefresh>
   )
 }
 
-function TickerOptionsGuide({ ticker, result, price, ec, metrics }) {
+
+function EntryChecklist({ result, price, candles, ec }) {
+  const rsi = result.mom?.rsi
+  const mom1m = result.mom?.['1m']
+  const ma50 = candles?.ma50
+  const aboveMA = price && ma50 ? price > ma50 : null
+  const verdict = result.verdict
+  const conviction = result.conviction
+
+  // Days to earnings
+  let daysToEarnings = null
+  if (ec?.date) { try { daysToEarnings = Math.round((new Date(ec.date) - new Date()) / 86400000) } catch {} }
+  const earningsSoon = daysToEarnings !== null && daysToEarnings <= 14
+
+  // Build checklist
+  const checks = []
+
+  // 1. Trend check
+  if (aboveMA !== null) {
+    checks.push({ label: 'Price vs 50-day MA', pass: aboveMA,
+      detail: aboveMA ? `$${price?.toFixed(2)} above MA $${ma50} ✓ trend confirmed` : `$${price?.toFixed(2)} below MA $${ma50} — trend not confirmed, higher risk` })
+  }
+
+  // 2. RSI check (not overbought for calls, not oversold for puts)
+  if (rsi != null) {
+    const rsiOk = verdict === 'BUY' ? rsi < 70 : verdict === 'AVOID' ? rsi > 30 : rsi > 35 && rsi < 65
+    checks.push({ label: 'RSI-14 entry zone', pass: rsiOk,
+      detail: verdict === 'BUY'
+        ? (rsi < 50 ? `RSI ${rsi} — good entry zone for calls, not chasing` : rsi < 70 ? `RSI ${rsi} — acceptable, use spreads not naked calls` : `RSI ${rsi} — overbought, wait for 55–65 before entering`)
+        : verdict === 'AVOID'
+        ? (rsi > 50 ? `RSI ${rsi} — good entry for puts, stock still elevated` : `RSI ${rsi} — already oversold, put premium may be expensive`)
+        : `RSI ${rsi} — ${rsi > 65 ? 'skewed high, iron condor call side at risk' : rsi < 35 ? 'skewed low, put side at risk' : 'neutral zone, iron condor is valid'}` })
+  }
+
+  // 3. Momentum check
+  if (mom1m != null) {
+    const momOk = verdict === 'BUY' ? mom1m > -5 : verdict === 'AVOID' ? mom1m < 5 : Math.abs(mom1m) < 10
+    checks.push({ label: '1-month momentum', pass: momOk,
+      detail: `${mom1m > 0 ? '+' : ''}${mom1m}% — ${
+        verdict === 'BUY' ? (mom1m > 10 ? 'strong tailwind, but check if chasing' : mom1m > 0 ? 'positive momentum supports calls' : 'negative momentum — wait for stabilisation')
+        : verdict === 'AVOID' ? (mom1m < -10 ? 'strong downtrend confirms put thesis' : mom1m < 0 ? 'negative momentum supports puts' : 'stock still rising — put timing risky')
+        : (Math.abs(mom1m) < 5 ? 'minimal movement, iron condor range-bound thesis valid' : 'too much directional move for range-bound strategies')
+      }` })
+  }
+
+  // 4. Earnings risk
+  checks.push({ label: 'Earnings timing', pass: !earningsSoon,
+    detail: earningsSoon
+      ? `Earnings in ~${daysToEarnings} days — IV is inflated, avoid buying options. Wait until after earnings or trade the event deliberately.`
+      : daysToEarnings !== null
+      ? `Next earnings ~${daysToEarnings} days away — IV not inflated yet. Good window for longer-dated options.`
+      : 'No upcoming earnings flagged — IV less likely to be inflated.' })
+
+  // 5. Conviction
+  checks.push({ label: 'Signal conviction', pass: conviction >= 50,
+    detail: `${conviction.toFixed(0)}% conviction · ${result.factorsAgree}/6 factors agree. ${
+      conviction >= 70 ? 'High conviction — full position sizing appropriate.' :
+      conviction >= 50 ? 'Moderate conviction — reduce position size by 30-50%.' :
+      'Low conviction — use defined-risk strategies only (spreads, not naked longs).'}` })
+
+  const passCount = checks.filter(c => c.pass).length
+  const totalChecks = checks.length
+  const score = Math.round(passCount / totalChecks * 100)
+  const readiness = score >= 80 ? { label: 'Good Entry', color: GREEN } : score >= 60 ? { label: 'Proceed with Caution', color: YELLOW } : { label: 'Wait for Better Setup', color: RED }
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:`${readiness.color}10`, border:`1px solid ${readiness.color}30`, borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
+        <div>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:readiness.color, letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Entry Readiness</div>
+          <div style={{ fontWeight:700, fontSize:'1.1rem', color:readiness.color }}>{readiness.label}</div>
+        </div>
+        <div style={{ textAlign:'right' }}>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'1.8rem', fontWeight:800, color:readiness.color, lineHeight:1 }}>{passCount}<span style={{ fontSize:'0.9rem', fontWeight:400 }}>/{totalChecks}</span></div>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:G1, marginTop:2 }}>checks pass</div>
+        </div>
+      </div>
+
+      <div style={{ background:G2, border:`1px solid ${G4}`, borderRadius:12, overflow:'hidden', marginBottom:12 }}>
+        {checks.map((c, i) => (
+          <div key={i} style={{ display:'flex', gap:12, padding:'12px 16px', borderBottom: i < checks.length-1 ? `1px solid ${G4}` : 'none', alignItems:'flex-start' }}>
+            <div style={{ width:20, height:20, borderRadius:'50%', background: c.pass ? 'rgba(0,200,5,0.15)' : 'rgba(255,80,0,0.12)', border: `1px solid ${c.pass ? 'rgba(0,200,5,0.4)' : 'rgba(255,80,0,0.3)'}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1, fontSize:'0.65rem' }}>
+              {c.pass ? '✓' : '✗'}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:600, fontSize:'0.8rem', marginBottom:3, color: c.pass ? '#fff' : G1 }}>{c.label}</div>
+              <div style={{ fontSize:'0.74rem', color:G1, lineHeight:1.6 }}>{c.detail}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {score < 60 && (
+        <div style={{ background:'rgba(255,215,0,0.06)', border:'1px solid rgba(255,215,0,0.2)', borderRadius:10, padding:'10px 14px', marginBottom:4, fontSize:'0.78rem', color:YELLOW, lineHeight:1.7 }}>
+          💡 Only {passCount}/{totalChecks} conditions met. Consider waiting for more favourable setup or use smaller size with defined risk (spreads only).
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TickerOptionsGuide({ ticker, result, price, ec, metrics, candles }) {
   const verdict = result.verdict
   const strats = OPTIONS_STRATEGIES[verdict]
   const color = strats.color
@@ -103,6 +205,10 @@ function TickerOptionsGuide({ ticker, result, price, ec, metrics }) {
           {oversold && <div style={{ background:'rgba(0,200,5,0.06)', border:'1px solid rgba(0,200,5,0.2)', borderRadius:10, padding:'10px 14px', marginBottom:8, fontSize:'0.8rem', color:GREEN }}>📊 RSI {rsi} — oversold zone. Call premiums are relatively cheap here — better time to buy directional exposure than chasing after a rally.</div>}
         </div>
       )}
+
+      {/* Live Entry Checklist */}
+      <SectionHeader>Should I Enter Now?</SectionHeader>
+      <EntryChecklist result={result} price={price} candles={candles} ec={ec} />
 
       {/* Strategies */}
       <SectionHeader>Strategies for {verdict} Signal</SectionHeader>
@@ -178,6 +284,7 @@ export default function Options() {
   const [ticker, setTicker] = useState('')
   const [input, setInput] = useState('')
   const { data, loading, error, fetch } = useTickerData()
+  const handleRefresh = React.useCallback(async () => { if (ticker) { setResult(null); fetch(ticker) } }, [ticker, fetch])
   const [result, setResult] = useState(null)
 
   useEffect(() => {
@@ -187,6 +294,7 @@ export default function Options() {
   const handle = () => { const t=input.trim().toUpperCase(); if(t){setTicker(t);fetch(t)} }
 
   return (
+    <PullToRefresh onRefresh={handleRefresh} enabled={!!ticker}>
     <div className="page">
       <div style={{ background:'rgba(0,200,5,0.04)', border:'1px solid rgba(0,200,5,0.15)', borderRadius:12, padding:'14px 16px', marginBottom:16 }}>
         <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:GREEN, letterSpacing:2, textTransform:'uppercase', marginBottom:5 }}>⚙ Options Guide</div>
@@ -222,6 +330,7 @@ export default function Options() {
           price={data.quote?.c}
           ec={data.ec}
           metrics={data.metrics}
+          candles={data.candles}
         />
       )}
 

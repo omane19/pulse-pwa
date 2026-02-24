@@ -3,7 +3,7 @@ import { fetchQuote, fetchCandles, fetchMetrics, fetchNews, fetchRec, fetchEarni
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { VerdictPill, FactorBars, LoadingBar } from './shared.jsx'
+import { VerdictPill, FactorBars, LoadingBar , PullToRefresh } from './shared.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const CYAN='#00E5FF'
 const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
@@ -71,6 +71,7 @@ export default function Compare() {
   const leader = a&&b ? (a.result.pct >= b.result.pct ? a : b) : null
 
   return (
+    <PullToRefresh onRefresh={run} enabled={!!(a && b)}>
     <div className="page">
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
         <input className="input" value={ta} onChange={e=>setTa(e.target.value.toUpperCase())}
@@ -146,6 +147,13 @@ export default function Compare() {
             </>
           )}
 
+          {/* Data quality note */}
+          {(a?.result.mom?.['1m'] == null || b?.result.mom?.['1m'] == null) && (
+            <div style={{ background:'rgba(255,215,0,0.06)', border:'1px solid rgba(255,215,0,0.2)', borderRadius:10, padding:'10px 14px', marginBottom:12, fontSize:'0.76rem', color:'#FFD700', lineHeight:1.7 }}>
+              ⚠ 1-month and 3-month data showing "—" means candle data didn't load — likely a rate limit on simultaneous API calls. The signal scores ARE multi-factor (momentum, trend, valuation, sentiment, analyst, earnings). Try tapping Compare again in 30 seconds.
+            </div>
+          )}
+
           {/* Key metrics */}
           <div className="sh">Key Metrics Side-by-Side</div>
           <div style={{ background:G2, border:`1px solid ${G4}`, borderRadius:14, marginBottom:12, overflow:'hidden' }}>
@@ -190,5 +198,6 @@ export default function Compare() {
 
       <div style={{ height:16 }} />
     </div>
+    </PullToRefresh>
   )
 }

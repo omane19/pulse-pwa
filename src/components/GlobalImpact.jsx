@@ -1,23 +1,26 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { fetchQuote } from '../hooks/useApi.js'
+import { PullToRefresh } from './shared.jsx'
 import { GLOBAL_CHAINS, TICKER_NAMES } from '../utils/constants.js'
 
-export default function GlobalImpact() {
+export default function GlobalImpact({ onNavigate }) {
   const [prices, setPrices] = useState({})
 
-  useEffect(() => {
+  const loadPrices = useCallback(async () => {
     const proxies = [...new Set(GLOBAL_CHAINS.map(c => c.proxy))]
-    Promise.all(proxies.map(async p => {
+    const results = await Promise.all(proxies.map(async p => {
       const q = await fetchQuote(p)
       return [p, q]
-    })).then(results => {
-      const map = {}
-      results.forEach(([p, q]) => { if (q) map[p] = q })
-      setPrices(map)
-    })
+    }))
+    const map = {}
+    results.forEach(([p, q]) => { if (q) map[p] = q })
+    setPrices(map)
   }, [])
 
+  useEffect(() => { loadPrices() }, [])
+
   return (
+    <PullToRefresh onRefresh={loadPrices}>
     <div className="page">
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#B2B2B2', marginBottom: 8 }}>🌍 Global Causal Chain Engine</div>
@@ -48,12 +51,13 @@ export default function GlobalImpact() {
             <div style={{ fontSize: '0.6rem', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', color: '#B2B2B2', marginBottom: 6 }}>Affected tickers</div>
             <div className="ticker-chips">
               {chain.affects.map(t => (
-                <span key={t} className="ticker-chip" title={TICKER_NAMES[t] || t}>{t}</span>
+                <button key={t} className="ticker-chip" title={`${TICKER_NAMES[t] || t} — tap to analyze in Dive`} onClick={()=>onNavigate&&onNavigate(t)} style={{cursor:"pointer",background:"transparent",border:"none",padding:0,color:"inherit",font:"inherit",WebkitTapHighlightColor:"transparent"}}>{t} ↗</button>
               ))}
             </div>
           </div>
         )
       })}
     </div>
+    </PullToRefresh>
   )
 }

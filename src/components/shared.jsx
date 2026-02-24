@@ -1,3 +1,4 @@
+import { usePullToRefresh } from '../hooks/usePullToRefresh.js'
 import React, { useState } from 'react'
 import { timeAgo, getTier } from '../utils/scoring.js'
 import { SOURCE_TIERS } from '../utils/constants.js'
@@ -125,6 +126,45 @@ export function SignalBar({ pct, color }) {
   return (
     <div className="signal-bar-outer">
       <div className="signal-bar-inner" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, ${color}99)` }} />
+    </div>
+  )
+}
+
+/* ── Pull-to-Refresh wrapper ─────────────────────────────────────── */
+export function PullToRefresh({ onRefresh, enabled = true, children }) {
+  const { pullY, state, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(onRefresh, enabled)
+  const spinning = state === 'refreshing'
+  const ready    = state === 'ready'
+  const visible  = pullY > 4 || spinning
+
+  return (
+    <div
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{ position: 'relative', minHeight: '100%' }}
+    >
+      {/* Indicator — sits above content, collapses to 0 when idle */}
+      <div style={{
+        height: visible ? `${pullY}px` : 0,
+        overflow: 'hidden',
+        transition: spinning ? 'none' : 'height 0.18s ease',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        paddingBottom: visible ? 6 : 0,
+        pointerEvents: 'none',
+      }}>
+        <div style={{
+          width: 28, height: 28,
+          border: `2.5px solid ${ready || spinning ? '#00C805' : '#2a2a2a'}`,
+          borderTopColor: '#00C805',
+          borderRadius: '50%',
+          animation: spinning ? 'ptr-spin 0.65s linear infinite' : 'none',
+          transform: !spinning ? `rotate(${Math.min(pullY / 39, 1) * 270}deg)` : undefined,
+          transition: spinning ? 'none' : 'border-color 0.12s',
+        }}/>
+      </div>
+      <style>{`@keyframes ptr-spin { to { transform: rotate(360deg) } }`}</style>
+      {children}
     </div>
   )
 }

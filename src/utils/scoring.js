@@ -60,8 +60,12 @@ export function calcMom(candles, quote) {
   return out
 }
 
-export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn) {
-  const W = { momentum:.20, trend:.15, valuation:.20, sentiment:.15, analyst:.20, earnings:.10 }
+export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smartMoney) {
+  // smartMoney: { insiderBuys, congressBuys, cluster } — optional 7th factor
+  const hasSmartMoney = smartMoney?.insiderBuys != null
+  const W = hasSmartMoney
+    ? { momentum:.18, trend:.13, valuation:.18, sentiment:.13, analyst:.18, earnings:.08, smartmoney:.12 }
+    : { momentum:.20, trend:.15, valuation:.20, sentiment:.15, analyst:.20, earnings:.10 }
   const S = {}; const R = {}
   const [avgSent, scoredNews] = credibilitySentiment(news)
   const mom = calcMom(candles, quote)
@@ -108,11 +112,12 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn) {
   const lb = avgSent > .08 ? 'Bullish' : avgSent < -.08 ? 'Bearish' : 'Neutral'
   S.sentiment = ss; R.sentiment = [`Credibility-weighted ${avgSent > 0 ? '+' : ''}${avgSent} (${lb}) · ${nw} articles`]
 
-  // Analyst
+  // Analyst — rec may be {current, history} (new format) or direct object (old)
+  const recData = rec?.current || rec || {}
   let as_ = 0; const ar = []
-  if (rec && Object.keys(rec).length) {
-    const sb = rec.strongBuy || 0; const b_ = rec.buy || 0; const h = rec.hold || 0
-    const s = rec.sell || 0; const ss2 = rec.strongSell || 0; const tot = sb + b_ + h + s + ss2
+  if (recData && Object.keys(recData).length) {
+    const sb = recData.strongBuy || 0; const b_ = recData.buy || 0; const h = recData.hold || 0
+    const s = recData.sell || 0; const ss2 = recData.strongSell || 0; const tot = sb + b_ + h + s + ss2
     if (tot > 0) {
       as_ = Math.max(-1, Math.min(1, ((sb + b_ * .5) / tot - (ss2 + s * .5) / tot) * 2))
       ar.push(`Wall St: ${sb} Strong Buy · ${b_} Buy · ${h} Hold · ${s} Sell · ${ss2} Strong Sell`)
@@ -134,12 +139,28 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn) {
   } else er.push('No earnings data')
   S.earnings = Math.max(-1, Math.min(1, es)); R.earnings = er
 
+  // Smart Money (7th factor — only when FMP data available)
+  if (hasSmartMoney) {
+    let sms = 0; const smr = []
+    const ib = smartMoney.insiderBuys || 0
+    const cb = smartMoney.congressBuys || 0
+    const cluster = smartMoney.cluster
+    if (cluster?.level === 'strong') { sms += 0.8; smr.push(cluster.label) }
+    else if (cluster?.level === 'moderate') { sms += 0.5; smr.push(cluster.label) }
+    else if (ib >= 1) { sms += 0.3; smr.push(`${ib} insider buy${ib > 1 ? 's' : ''} recently`) }
+    if (cb >= 3) { sms += 0.4; smr.push(`${cb} congressional purchases`) }
+    else if (cb >= 1) { sms += 0.2; smr.push(`${cb} congressional purchase${cb > 1 ? 's' : ''}`) }
+    if (sms === 0) smr.push('No smart money activity found')
+    S.smartmoney = Math.max(-1, Math.min(1, sms)); R.smartmoney = smr
+  }
+
   const total = Object.entries(W).reduce((sum, [k, w]) => sum + (S[k] || 0) * w, 0)
   const pct = Math.round((total + 1) / 2 * 100 * 10) / 10
   const verdict = total >= .30 ? 'BUY' : total >= .05 ? 'HOLD' : 'AVOID'
   const color = verdict === 'BUY' ? '#00C805' : verdict === 'HOLD' ? '#FFD700' : '#FF5000'
   const factorsAgree = Object.values(S).filter(v => v > 0.1).length
-  const conviction = parseFloat((factorsAgree / 6 * 60 + pct * 0.4).toFixed(1))
+  const totalFactors = Object.keys(S).length
+  const conviction = parseFloat((factorsAgree / totalFactors * 60 + pct * 0.4).toFixed(1))
   const uncertainty = []
   if (pe && pe > 35) uncertainty.push('high P/E leaves little margin for error')
   if (S.sentiment < 0 && S.analyst > 0) uncertainty.push('news and analyst signals diverge')
