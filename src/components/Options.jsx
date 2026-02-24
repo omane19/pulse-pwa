@@ -41,7 +41,6 @@ function StratCard({ strat }) {
         </div>
       )}
     </div>
-    </PullToRefresh>
   )
 }
 
@@ -353,5 +352,6 @@ export default function Options() {
 
       <div style={{ height:16 }} />
     </div>
+    </PullToRefresh>
   )
 }
