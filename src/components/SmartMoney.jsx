@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { fetchFMPRecentCongress, fetchFMPRecentInsider, fetchFMPCongressional, fetchFMPInsider, hasKeys } from '../hooks/useApi.js'
-import { PullToRefresh } from './shared.jsx'
-import usePullToRefresh from '../hooks/usePullToRefresh.js'
 
 const fmt = (n) => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}K` : `$${n}`
 const fmtDate = (s) => { try { return new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}) } catch { return s } }
@@ -115,10 +113,6 @@ export default function SmartMoney() {
     setLoadingSearch(false)
   }, [hasFmp])
 
-  const { pulling, ready, containerRef } = usePullToRefresh({
-    onRefresh: tab === 'feed' ? loadFeed : null,
-    enabled: tab === 'feed',
-  })
 
   if (!hasFmp) {
     return (
@@ -137,7 +131,7 @@ export default function SmartMoney() {
   }
 
   return (
-    <PullToRefresh pulling={pulling} ready={ready} containerRef={containerRef}>
+    <div>
       <div style={{ padding:'0 16px 24px' }}>
 
         {/* Tab switcher */}
@@ -182,6 +176,6 @@ export default function SmartMoney() {
         )}
 
       </div>
-    </PullToRefresh>
+    </div>
   )
 }

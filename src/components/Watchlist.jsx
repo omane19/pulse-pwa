@@ -57,8 +57,6 @@ export default function Watchlist({ onNavigateToTicker }) {
             {loading ? `Scoring ${progress}%…` : `Refresh Signals (${list.length} tickers)`}
           </button>
 
-          )}
-
           {loading && <LoadingBar progress={progress} text={`Scoring watchlist… ${progress}%`} />}
 
           {results.length > 0 && (
