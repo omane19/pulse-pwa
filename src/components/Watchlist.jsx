@@ -4,7 +4,6 @@ import { fetchTickerFull } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh } from './shared.jsx'
-import { useNotifications } from '../hooks/useNotifications.js'
 
 export default function Watchlist({ onNavigateToTicker }) {
   const { list, add, remove } = useWatchlist()
@@ -13,7 +12,6 @@ export default function Watchlist({ onNavigateToTicker }) {
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [toast, setToast] = useState(null)
-  const { permission, requestPermission, scheduleWatchlistAlert } = useNotifications()
 
   const handleAdd = () => {
     const t = input.trim().toUpperCase()
@@ -36,11 +34,7 @@ export default function Watchlist({ onNavigateToTicker }) {
     const sorted = out.sort((a, b) => b.result.pct - a.result.pct)
     setResults(sorted)
     setLoading(false)
-    // Trigger notification if permission granted and BUY signals exist
-    if (permission === 'granted') {
-      scheduleWatchlistAlert(sorted.map(r => ({ ticker: r.ticker, verdict: r.result.verdict })))
-    }
-  }, [list, permission, scheduleWatchlistAlert])
+  }, [list])
 
   return (
     <PullToRefresh onRefresh={handleRefresh} enabled={list.length > 0}>
@@ -63,23 +57,6 @@ export default function Watchlist({ onNavigateToTicker }) {
             {loading ? `Scoring ${progress}%…` : `Refresh Signals (${list.length} tickers)`}
           </button>
 
-          {permission === 'default' && (
-            <button
-              onClick={requestPermission}
-              style={{
-                width: '100%', marginBottom: 12, padding: '10px',
-                background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)',
-                borderRadius: 10, color: '#00E5FF', fontFamily: 'var(--font-mono)',
-                fontSize: '0.7rem', cursor: 'pointer', letterSpacing: '0.5px'
-              }}
-            >
-              🔔 Enable BUY alerts — notify when watchlist has signals
-            </button>
-          )}
-          {permission === 'granted' && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: '#00C805', marginBottom: 12, textAlign: 'center' }}>
-              ✓ Notifications on — you'll be alerted when BUY signals are found
-            </div>
           )}
 
           {loading && <LoadingBar progress={progress} text={`Scoring watchlist… ${progress}%`} />}
