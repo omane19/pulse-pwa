@@ -230,7 +230,7 @@ function AnalysisBrief({ ticker, company, sector, price, result, ma50, metrics, 
     ].filter(Boolean)],
     ['ANALYSTS & INSIDERS', `${recTxt||'No analyst rating data available'}. Insider activity (90d): ${insSig}.`],
     [`VERDICT — ${result.verdict} · ${result.pct.toFixed(0)}/100 · CONVICTION ${result.conviction.toFixed(0)}%`,
-      `${result.factorsAgree}/6 signal factors agree. ` +
+      `${result.factorsAgree}/${Object.keys(result.scores).length} signal factors agree. ` +
       (result.verdict==='BUY'?`Entry opportunity — ${result.conviction>70?'high':'moderate'} confidence. Respect position sizing.`:
        result.verdict==='HOLD'?`Hold existing positions. Not ideal entry point. Wait for clearer signal.`:
        `Avoid or reduce exposure. Signal does not support buying here.`)],
@@ -319,7 +319,7 @@ function VerdictCard({ result }) {
       <div style={{background:'#2E2E2E',borderRadius:3,height:3,width:160,margin:'12px auto 7px',overflow:'hidden'}}>
         <div style={{height:3,borderRadius:3,width:`${conviction}%`,background:`linear-gradient(90deg,${color},${color}88)`,transition:'width .8s'}}/>
       </div>
-      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#B2B2B2',marginBottom:12}}>Conviction {conviction.toFixed(0)}% · {factorsAgree}/6 factors agree</div>
+      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#B2B2B2',marginBottom:12}}>Conviction {conviction.toFixed(0)}% · {factorsAgree}/{Object.keys(scores).length} factors agree</div>
       <div style={{maxWidth:360,margin:'0 auto',textAlign:'left',marginBottom:12}}>
         {allReasons.slice(0,8).map((r,i)=><div key={i} style={{fontSize:'0.78rem',color:'#B2B2B2',padding:'4px 0',borderBottom:'1px solid #1A1A1A',lineHeight:1.6}}>· {r}</div>)}
       </div>

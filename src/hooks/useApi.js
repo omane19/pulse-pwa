@@ -124,7 +124,7 @@ export async function fetchQuote(ticker) {
 /* ══════════════════════════════════════════
    CANDLES — FMP /stable/historical-price-eod/full primary
 ══════════════════════════════════════════ */
-export async function fetchCandles(ticker, days = 120) {
+export async function fetchCandles(ticker, days = 150) {
   if (hasKeys().fmp) {
     const from = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]
     const d = await fmp(`/historical-price-eod/full?symbol=${ticker}&from=${from}`, 600000)
@@ -164,12 +164,16 @@ export async function fetchCandles(ticker, days = 120) {
 ══════════════════════════════════════════ */
 export async function fetchMetrics(ticker) {
   if (hasKeys().fmp) {
-    const d = await fmp(`/profile?symbol=${ticker}`, 3600000)
-    const p = Array.isArray(d) ? d[0] : d
+    const [profileArr, ratiosArr] = await Promise.all([
+      fmp(`/profile?symbol=${ticker}`, 3600000),
+      fmp(`/ratios-ttm?symbol=${ticker}`, 3600000),
+    ])
+    const p = Array.isArray(profileArr) ? profileArr[0] : profileArr
+    const r = Array.isArray(ratiosArr)  ? ratiosArr[0]  : ratiosArr
     if (p?.symbol) {
       return {
-        peTTM:     p.pe || null,
-        pbAnnual:  p.priceToBookRatio || null,
+        peTTM:     r?.priceToEarningsRatioTTM || null,
+        pbAnnual:  r?.priceToBookRatioTTM || null,
         roeTTM:    null,
         marketCap: p.mktCap || null,
         beta:      p.beta || null,
@@ -425,7 +429,7 @@ export function computeClusterSignal(insiderData) {
 export async function fetchTickerLite(ticker) {
   try {
     const [quote, candles, metrics] = await Promise.all([
-      fetchQuote(ticker), fetchCandles(ticker, 90), fetchMetrics(ticker)
+      fetchQuote(ticker), fetchCandles(ticker, 150), fetchMetrics(ticker)
     ])
     if (!quote) return null
     return { ticker, quote, candles, metrics: metrics || {}, news: [], rec: {}, earnings: [] }

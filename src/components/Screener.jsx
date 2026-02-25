@@ -343,8 +343,8 @@ export default function Screener({ onNavigateToDive }) {
         {loading
           ? `Scanning ${progress}% · ${progressTicker}…`
           : mode === 'topN'
-            ? `🏆 Find Top ${topN} per Segment → ${allTickers.length} tickers`
-            : `🔍 Full Scan → ${allTickers.length} tickers`
+            ? `🏆 Find Top ${topN} per Segment → ${hasKeys().fmp && customTickers.length === 0 ? '500+ tickers (FMP)' : `${allTickers.length} tickers`}`
+            : `🔍 Full Scan → ${hasKeys().fmp && customTickers.length === 0 ? '500+ tickers (FMP)' : `${allTickers.length} tickers`}`
         }
       </button>
 
