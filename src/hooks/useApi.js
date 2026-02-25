@@ -262,8 +262,20 @@ export async function fetchRec(ticker) {
 }
 
 export async function fetchEarnings(ticker) {
+  if (hasKeys().fmp) {
+    const d = await fmp(`/earnings?symbol=${ticker}&limit=8`, 300000)
+    if (Array.isArray(d) && d.length) {
+      return d.map(q => ({
+        date:        q.date,
+        actual:      q.epsActual,
+        estimate:    q.epsEstimated,
+        revActual:   q.revenueActual,
+        revEstimate: q.revenueEstimated,
+      }))
+    }
+  }
   const d = await fh(`/stock/earnings?symbol=${ticker}`, 300000)
-  return Array.isArray(d) ? d.slice(0, 4) : []
+  return Array.isArray(d) ? d.slice(0, 8) : []
 }
 
 export async function fetchProfile(ticker) {

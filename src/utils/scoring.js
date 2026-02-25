@@ -125,16 +125,47 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   } else ar.push('No analyst coverage')
   S.analyst = as_; R.analyst = ar
 
-  // Earnings
+  // Earnings — deep momentum scoring
   let es = 0; const er = []
   if (earn?.length) {
-    const surp = earn.slice(0, 4).filter(q => q.estimate).map(q =>
-      ((q.actual || 0) - (q.estimate || 0)) / Math.abs(q.estimate || 1) * 100)
-    if (surp.length) {
-      const avgS = surp.reduce((a, b) => a + b, 0) / surp.length
-      const beats = surp.filter(x => x > 0).length
-      es = Math.max(-1, Math.min(1, avgS / 15))
-      er.push(`Beat estimates ${beats}/${surp.length} qtrs · avg ${avgS > 0 ? '+' : ''}${avgS.toFixed(1)}%`)
+    const withEst = earn.filter(q => q.estimate != null && q.actual != null)
+    if (withEst.length) {
+      // EPS surprise % per quarter
+      const epsSurp = withEst.map(q =>
+        ((q.actual - q.estimate) / Math.abs(q.estimate || 1)) * 100)
+
+      const recent4 = epsSurp.slice(0, 4)
+      const avgS    = recent4.reduce((a, b) => a + b, 0) / recent4.length
+      const beats   = recent4.filter(x => x > 0).length
+
+      // Base score from beat rate and magnitude
+      es += (beats / recent4.length - 0.5) * 1.2   // -0.6 to +0.6
+      es += Math.max(-0.3, Math.min(0.3, avgS / 20)) // magnitude bonus
+
+      // Consecutive beats bonus — most powerful signal
+      let streak = 0
+      for (const s of epsSurp) { if (s > 0) streak++; else break }
+      if (streak >= 6) { es += 0.5; er.push(`🔥 ${streak} consecutive beats — rare consistency`) }
+      else if (streak >= 4) { es += 0.3; er.push(`${streak} consecutive EPS beats`) }
+      else if (streak >= 2) { es += 0.15; er.push(`${streak} consecutive EPS beats`) }
+
+      // Acceleration — is the beat getting bigger?
+      if (epsSurp.length >= 3) {
+        const accel = epsSurp[0] - epsSurp[2] // recent vs 2 qtrs ago
+        if (accel > 5) { es += 0.2; er.push(`Beat acceleration +${accel.toFixed(1)}% vs 2 qtrs ago`) }
+        else if (accel < -5) { es -= 0.15; er.push(`Beat shrinking vs prior quarters`) }
+      }
+
+      // Revenue surprise bonus
+      const revWithEst = withEst.filter(q => q.revActual && q.revEstimate)
+      if (revWithEst.length) {
+        const revBeats = revWithEst.filter(q => q.revActual > q.revEstimate).length
+        const revRate  = revBeats / revWithEst.length
+        if (revRate >= 0.75) { es += 0.2; er.push(`Revenue beat ${revBeats}/${revWithEst.length} qtrs`) }
+        else if (revRate < 0.4) { es -= 0.15; er.push(`Revenue misses ${revWithEst.length - revBeats}/${revWithEst.length} qtrs`) }
+      }
+
+      er.unshift(`EPS beat ${beats}/${recent4.length} qtrs · avg ${avgS > 0 ? '+' : ''}${avgS.toFixed(1)}%`)
     }
   } else er.push('No earnings data')
   S.earnings = Math.max(-1, Math.min(1, es)); R.earnings = er
