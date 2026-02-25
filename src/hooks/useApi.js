@@ -32,10 +32,7 @@ async function go(url, retries = 1) {
     try {
       const r = await fetch(url, { signal: ctrl.signal })
       clearTimeout(tid)
-      if (r.status === 429) {
-        await new Promise(res => setTimeout(res, 2000))
-        continue
-      }
+      if (r.status === 429) { await new Promise(res => setTimeout(res, 2000)); continue }
       if (!r.ok) return null
       return await r.json()
     } catch { clearTimeout(tid); if (attempt < retries) await new Promise(res => setTimeout(res, 1000)) }
@@ -66,7 +63,7 @@ async function av(params, ttl = 3600000) {
   cSet(url, data); return data
 }
 
-/* ── FMP ── */
+/* ── FMP stable (modern endpoints) ── */
 async function fmp(path, ttl = 300000) {
   const key = FMP_KEY()
   if (!key || key.length < 8) return null
@@ -78,12 +75,12 @@ async function fmp(path, ttl = 300000) {
   return data
 }
 
-/* ── FMP v3 (some endpoints still on v3) ── */
-async function fmpv3(path, ttl = 300000) {
+/* ── FMP v4 (insider trading, congressional) ── */
+async function fmpv4(path, ttl = 300000) {
   const key = FMP_KEY()
   if (!key || key.length < 8) return null
   const sep = path.includes('?') ? '&' : '?'
-  const url = `https://financialmodelingprep.com/api/v3${path}${sep}apikey=${key}`
+  const url = `https://financialmodelingprep.com/api/v4${path}${sep}apikey=${key}`
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (data !== null) cSet(url, data)
@@ -91,14 +88,13 @@ async function fmpv3(path, ttl = 300000) {
 }
 
 /* ══════════════════════════════════════════
-   QUOTE
+   QUOTE — FMP /stable/quote primary
 ══════════════════════════════════════════ */
 export async function fetchQuote(ticker) {
-  // Try FMP first if key available
   if (hasKeys().fmp) {
     const d = await fmp(`/quote?symbol=${ticker}`, 30000)
-    if (Array.isArray(d) && d[0]?.price) {
-      const q = d[0]
+    const q = Array.isArray(d) ? d[0] : d
+    if (q?.price) {
       return {
         c: q.price, pc: q.previousClose || q.price,
         d: q.change || 0, dp: q.changesPercentage || 0,
@@ -108,10 +104,10 @@ export async function fetchQuote(ticker) {
       }
     }
   }
-  // Fallback to Finnhub
+  // Finnhub fallback
   const d = await fh(`/quote?symbol=${ticker}`, 30000)
   if (d?.c && d.c !== 0) return { ...d, source: 'finnhub' }
-  // Fallback to Alpha Vantage
+  // Alpha Vantage fallback
   const a = await av({ function: 'GLOBAL_QUOTE', symbol: ticker })
   const q = a?.['Global Quote']
   if (!q?.['05. price']) return null
@@ -126,16 +122,16 @@ export async function fetchQuote(ticker) {
 }
 
 /* ══════════════════════════════════════════
-   CANDLES — FMP primary, Finnhub fallback
+   CANDLES — FMP /stable/historical-price-eod/full primary
 ══════════════════════════════════════════ */
 export async function fetchCandles(ticker, days = 120) {
-  // Try FMP first — more reliable, higher rate limit
   if (hasKeys().fmp) {
     const from = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]
     const d = await fmp(`/historical-price-eod/full?symbol=${ticker}&from=${from}`, 600000)
-    if (Array.isArray(d) && d.length >= 10) {
-      // FMP returns newest first — reverse to oldest first
-      const sorted = [...d].reverse()
+    // Response is array of {date, open, high, low, close, volume}
+    const hist = Array.isArray(d) ? d : d?.historical
+    if (Array.isArray(hist) && hist.length >= 10) {
+      const sorted = [...hist].sort((a, b) => new Date(a.date) - new Date(b.date))
       const closes    = sorted.map(c => c.close)
       const highs     = sorted.map(c => c.high)
       const lows      = sorted.map(c => c.low)
@@ -150,7 +146,7 @@ export async function fetchCandles(ticker, days = 120) {
       return { closes, highs, lows, opens, volumes, timestamps, ma50, source: 'fmp' }
     }
   }
-  // Fallback to Finnhub
+  // Finnhub fallback
   const from = Math.floor(Date.now() / 1000 - days * 86400)
   const to   = Math.floor(Date.now() / 1000)
   const d    = await fh(`/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}`, 600000)
@@ -164,38 +160,30 @@ export async function fetchCandles(ticker, days = 120) {
 }
 
 /* ══════════════════════════════════════════
-   METRICS
+   METRICS — FMP /stable/profile primary
 ══════════════════════════════════════════ */
 export async function fetchMetrics(ticker) {
-  // Try FMP key metrics first
   if (hasKeys().fmp) {
-    const [profile, ratios] = await Promise.all([
-      fmp(`/profile?symbol=${ticker}`, 3600000),
-      fmpv3(`/ratios-ttm/${ticker}`, 3600000),
-    ])
-    const p = Array.isArray(profile) ? profile[0] : profile
-    const r = Array.isArray(ratios)  ? ratios[0]  : ratios
+    const d = await fmp(`/profile?symbol=${ticker}`, 3600000)
+    const p = Array.isArray(d) ? d[0] : d
     if (p?.symbol) {
       return {
-        peTTM:      p.pe || r?.peRatioTTM || null,
-        pbAnnual:   p.priceToBookRatio || r?.priceToBookRatioTTM || null,
-        roeTTM:     r?.returnOnEquityTTM ? r.returnOnEquityTTM * 100 : null,
-        marketCap:  p.mktCap || null,
-        beta:       p.beta || null,
+        peTTM:     p.pe || null,
+        pbAnnual:  p.priceToBookRatio || null,
+        roeTTM:    null,
+        marketCap: p.mktCap || null,
+        beta:      p.beta || null,
         _fmp: {
-          forwardPE:    p.forwardPE || null,
-          targetPrice:  p.dcfDiff ? p.dcf : null,
-          profitMargin: p.netProfitMargin || (r?.netProfitMarginTTM || null),
-          divYield:     p.lastDiv || null,
           sector:       p.sector || null,
           description:  p.description || null,
-          analystTarget: p.priceTarget || null,
+          divYield:     p.lastDiv || null,
+          targetPrice:  p.dcf || null,
         },
         source: 'fmp'
       }
     }
   }
-  // Fallback to Finnhub + AV
+  // Finnhub + AV fallback
   const d  = await fh(`/stock/metric?symbol=${ticker}&metric=ALL`, 120000)
   const mt = d?.metric || {}
   try {
@@ -215,21 +203,19 @@ export async function fetchMetrics(ticker) {
 }
 
 /* ══════════════════════════════════════════
-   NEWS
+   NEWS — FMP /stable/stock-news primary
 ══════════════════════════════════════════ */
 export async function fetchNews(ticker, days = 10) {
-  // Try FMP news first
   if (hasKeys().fmp) {
-    const d = await fmp(`/news/stock?symbols=${ticker}&limit=30`, 120000)
+    const d = await fmp(`/stock-news?symbols=${ticker}&limit=30`, 120000)
     if (Array.isArray(d) && d.length) {
       return d.slice(0, 30).filter(a => a.title).map(a => ({
-        title: a.title, body: (a.text || a.content || '').slice(0, 700),
-        link: a.url || '#', source: a.site || a.source || 'Unknown',
+        title: a.title, body: (a.text || '').slice(0, 700),
+        link: a.url || '#', source: a.site || 'Unknown',
         ts: a.publishedDate ? new Date(a.publishedDate).getTime() / 1000 : 0
       }))
     }
   }
-  // Fallback to Finnhub
   const from = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]
   const to   = new Date().toISOString().split('T')[0]
   const d    = await fh(`/company-news?symbol=${ticker}&from=${from}&to=${to}`, 60000)
@@ -240,13 +226,10 @@ export async function fetchNews(ticker, days = 10) {
   }))
 }
 
-/* ══════════════════════════════════════════
-   REGION NEWS — for Global tab
-══════════════════════════════════════════ */
+/* ── Region news for Global tab ── */
 export async function fetchRegionNews(proxy) {
-  // Get recent news for a proxy ticker (FXI for China, EWJ for Japan, etc.)
   if (hasKeys().fmp) {
-    const d = await fmp(`/news/stock?symbols=${proxy}&limit=5`, 600000)
+    const d = await fmp(`/stock-news?symbols=${proxy}&limit=5`, 600000)
     if (Array.isArray(d) && d.length) {
       return d.slice(0, 5).map(a => ({
         title: a.title, source: a.site || 'Unknown',
@@ -255,7 +238,6 @@ export async function fetchRegionNews(proxy) {
       }))
     }
   }
-  // Fallback to Finnhub
   const from = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
   const to   = new Date().toISOString().split('T')[0]
   const d    = await fh(`/company-news?symbol=${proxy}&from=${from}&to=${to}`, 600000)
@@ -267,7 +249,7 @@ export async function fetchRegionNews(proxy) {
 }
 
 /* ══════════════════════════════════════════
-   ANALYST RECS + EARNINGS
+   ANALYST, EARNINGS, PROFILE, INSIDER
 ══════════════════════════════════════════ */
 export async function fetchRec(ticker) {
   const d = await fh(`/stock/recommendation?symbol=${ticker}`, 300000)
@@ -298,21 +280,18 @@ export async function fetchEarningsCalendar(ticker) {
 }
 
 /* ══════════════════════════════════════════
-   MACRO — live economic data via FMP
+   MACRO — FMP live economic data
 ══════════════════════════════════════════ */
 export async function fetchMacroLive() {
   if (!hasKeys().fmp) return null
-  const from = new Date().toISOString().split('T')[0]
+  const from = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
   const to   = new Date(Date.now() + 45 * 86400000).toISOString().split('T')[0]
-  const past = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
 
-  const [calendar, sectors, treasury] = await Promise.all([
-    fmpv3(`/economic_calendar?from=${past}&to=${to}`, 1800000),
-    fmpv3(`/sector-performance`, 1800000),
-    fmpv3(`/historical-chart/1day/^TNX?from=${past}&to=${from}`, 1800000),
+  const [calendar, sectors] = await Promise.all([
+    fmp(`/economic-calendar?from=${from}&to=${to}`, 1800000),
+    fmp(`/sector-performance`, 1800000),
   ])
 
-  // Economic calendar — filter key events
   const KEY_EVENTS = ['FOMC','Federal Reserve','CPI','GDP','Nonfarm','Unemployment','PCE','PPI','Retail Sales','ISM']
   const events = Array.isArray(calendar)
     ? calendar
@@ -321,74 +300,63 @@ export async function fetchMacroLive() {
         .sort((a, b) => new Date(a.date) - new Date(b.date))
         .slice(0, 12)
         .map(e => ({
-          date: e.date,
-          event: e.event,
-          actual: e.actual,
-          estimate: e.estimate,
-          previous: e.previous,
+          date: e.date, event: e.event,
+          actual: e.actual, estimate: e.estimate, previous: e.previous,
           impact: e.impact || 'Medium',
           isPast: new Date(e.date) < new Date(),
         }))
     : []
 
-  // Sector performance
   const sectorData = Array.isArray(sectors)
-    ? sectors
-        .map(s => ({ name: s.sector, change: parseFloat(s.changesPercentage || 0) }))
-        .sort((a, b) => b.change - a.change)
+    ? sectors.map(s => ({ name: s.sector, change: parseFloat(s.changesPercentage || 0) })).sort((a, b) => b.change - a.change)
     : []
 
-  // 10yr Treasury yield
-  const yieldData = Array.isArray(treasury) && treasury.length
-    ? parseFloat(treasury[0].close || treasury[0].price || 0)
-    : null
-
-  return { events, sectorData, yieldData }
+  return { events, sectorData }
 }
 
 /* ══════════════════════════════════════════
-   FMP SCREENER — bulk, 500+ tickers
+   FMP SCREENER — bulk 500+ tickers
+   /stable/company-screener
 ══════════════════════════════════════════ */
 export async function fetchFMPScreener({ minMcap = 500, limit = 500 } = {}) {
-  // minMcap in millions
-  const d = await fmpv3(
-    `/stock-screener?marketCapMoreThan=${minMcap * 1e6}&country=US&isEtf=false&isActivelyTrading=true&limit=${limit}`,
+  const d = await fmp(
+    `/company-screener?marketCapMoreThan=${minMcap * 1e6}&country=US&isEtf=false&isActivelyTrading=true&limit=${limit}`,
     3600000
   )
   if (!Array.isArray(d)) return []
   return d.map(s => ({
-    ticker:   s.symbol,
-    name:     s.companyName,
-    sector:   s.sector || 'Unknown',
-    price:    s.price || 0,
-    mcap:     s.marketCap || 0,
-    volume:   s.volume || 0,
-    pe:       s.pe || null,
-    beta:     s.beta || null,
+    ticker:  s.symbol,
+    name:    s.companyName,
+    sector:  s.sector || 'Unknown',
+    price:   s.price || 0,
+    mcap:    s.marketCap || 0,
+    volume:  s.volume || 0,
+    pe:      s.pe || null,
   }))
 }
 
 /* ══════════════════════════════════════════
    FMP SMART MONEY
+   Congressional: /stable/senate-trading
+   Insider: /api/v4/insider-trading (confirmed v4)
 ══════════════════════════════════════════ */
 export async function fetchFMPCongressional(ticker) {
-  const d = await fmp(`/senate-trades?symbol=${ticker}`, 3600000)
+  const d = await fmp(`/senate-trading?symbol=${ticker}`, 3600000)
   if (!Array.isArray(d) || !d.length) return []
   return d.slice(0, 20).map(t => ({
-    name:    (t.firstName || '') + ' ' + (t.lastName || t.office || ''),
-    party:   t.district || '?',
-    chamber: 'Senate',
-    type:    t.type || '?',
+    name:    (t.firstName || '') + ' ' + (t.lastName || ''),
+    party:   t.party || '?',
+    type:    t.type || t.transactionType || '?',
     amount:  t.amount || '?',
     date:    t.transactionDate || t.disclosureDate || '?',
-    ticker:  t.symbol || ticker,
-    asset:   t.assetDescription || ticker,
-    isBuy:   (t.type || '').toLowerCase().includes('purchase') || (t.type || '').toLowerCase().includes('buy'),
+    ticker:  t.ticker || t.symbol || ticker,
+    isBuy:   (t.type || t.transactionType || '').toLowerCase().includes('purchase') ||
+             (t.type || t.transactionType || '').toLowerCase().includes('buy'),
   }))
 }
 
 export async function fetchFMPInsider(ticker) {
-  const d = await fmp(`/insider-trading/search?symbol=${ticker}&limit=30`, 300000)
+  const d = await fmpv4(`/insider-trading?symbol=${ticker}&limit=30`, 300000)
   if (!Array.isArray(d) || !d.length) return []
   return d.slice(0, 30).map(t => ({
     name:        t.reportingName || 'Unknown',
@@ -399,13 +367,13 @@ export async function fetchFMPInsider(ticker) {
     value:       (t.securitiesTransacted || 0) * (t.price || 0),
     date:        t.transactionDate || t.filingDate || '?',
     ticker:      t.symbol || ticker,
-    isBuy:       (t.acquisitionOrDisposition || '').toUpperCase() === 'A',
+    isBuy:       (t.acquistionOrDisposition || t.acquisitionOrDisposition || '').toUpperCase() === 'A',
     sharesOwned: t.securitiesOwned || 0,
   }))
 }
 
 export async function fetchFMPRecentInsider() {
-  const d = await fmp(`/insider-trading?transactionType=P-Purchase&limit=50`, 120000)
+  const d = await fmpv4(`/insider-trading?transactionType=P-Purchase&limit=50`, 120000)
   if (!Array.isArray(d)) return []
   return d.slice(0, 50).map(t => ({
     name:   t.reportingName || 'Unknown',
@@ -420,16 +388,20 @@ export async function fetchFMPRecentInsider() {
 }
 
 export async function fetchFMPRecentCongress() {
-  const d = await fmp(`/senate-trades?limit=50`, 120000)
-  if (!Array.isArray(d)) return []
-  return d.filter(t => {
+  // Also fetch House trades for better coverage
+  const [senate, house] = await Promise.all([
+    fmp(`/senate-trading?limit=50`, 120000),
+    fmp(`/house-trading?limit=50`, 120000),
+  ])
+  const all = [...(Array.isArray(senate) ? senate : []), ...(Array.isArray(house) ? house : [])]
+  return all.filter(t => {
     const type = (t.type || t.transactionType || '').toLowerCase()
     return type.includes('purchase') || type.includes('buy')
-  }).slice(0, 40).map(t => ({
+  }).slice(0, 50).map(t => ({
     name:   (t.firstName || '') + ' ' + (t.lastName || ''),
-    party:  t.party || t.district || '?',
+    party:  t.party || '?',
     ticker: t.ticker || t.symbol || '?',
-    type:   t.type || '?',
+    type:   t.type || t.transactionType || '?',
     amount: t.amount || '?',
     date:   t.transactionDate || t.disclosureDate || '?',
     isBuy:  true,
