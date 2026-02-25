@@ -73,8 +73,6 @@ export const TICKER_NAMES = {
   HOOD:"Robinhood — commission-free trading app",
   PTON:"Peloton Interactive — connected fitness equipment",
   ZM:"Zoom Video — video conferencing platform",
-}
-
   // ETFs — expanded
   VOO:"Vanguard S&P 500 ETF", VTV:"Vanguard Value ETF", VUG:"Vanguard Growth ETF",
   MDY:"S&P MidCap 400 ETF", IJR:"iShares S&P Small-Cap 600 ETF", IVV:"iShares S&P 500 ETF",
@@ -197,6 +195,7 @@ export const TICKER_NAMES = {
   // Small-cap additions
   DUOL:"Duolingo — language learning app", CROX:"Crocs — footwear brand",
   RELY:"Remitly Global — digital remittances", NU:"Nu Holdings — Brazilian digital bank",
+}
 
 export const UNIVERSE = {
   "US Broad":       ["SPY","QQQ","IWM","VTI","DIA","RSP","VOO","VTV","VUG","MDY","IJR","IVV","SCHB","ITOT","SCHA"],
