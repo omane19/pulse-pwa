@@ -10,7 +10,7 @@ const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
 async function loadOne(ticker) {
   const [quote, candles, metrics, news, rec, earnings, profile] = await Promise.all([
-    fetchQuote(ticker), fetchCandles(ticker,90), fetchMetrics(ticker),
+    fetchQuote(ticker), fetchCandles(ticker,150), fetchMetrics(ticker),
     fetchNews(ticker,7), fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker)
   ])
   if (!quote) return null
