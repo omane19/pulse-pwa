@@ -1,17 +1,33 @@
 import React, { useState, useCallback } from 'react'
 import { useWatchlist } from '../hooks/useWatchlist.js'
-import { fetchTickerFull } from '../hooks/useApi.js'
+import { fetchTickerLite } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh } from './shared.jsx'
 
-export default function Watchlist({ onNavigateToTicker }) {
+const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
+
+function ScoreBadge({ pct, verdict }) {
+  const color = verdict === 'BUY' ? GREEN : verdict === 'HOLD' ? YELLOW : RED
+  return (
+    <div style={{
+      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+      width:48, height:48, borderRadius:12,
+      background:`${color}12`, border:`1.5px solid ${color}40`, flexShrink:0
+    }}>
+      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.9rem', fontWeight:700, color, lineHeight:1 }}>{Math.round(pct)}</div>
+      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.48rem', color, letterSpacing:1, marginTop:2 }}>{verdict}</div>
+    </div>
+  )
+}
+
+export default function Watchlist({ onNavigateToDive }) {
   const { list, add, remove } = useWatchlist()
-  const [input, setInput] = useState('')
+  const [input, setInput]     = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [toast, setToast] = useState(null)
+  const [toast, setToast]     = useState(null)
 
   const handleAdd = () => {
     const t = input.trim().toUpperCase()
@@ -23,82 +39,119 @@ export default function Watchlist({ onNavigateToTicker }) {
     if (!list.length) return
     setLoading(true); setProgress(0); setResults([])
     const out = []
-    for (let i = 0; i < list.length; i++) {
-      const data = await fetchTickerFull(list[i])
-      if (data) {
+    // Batch 5 at a time for speed
+    const BATCH = 5
+    for (let i = 0; i < list.length; i += BATCH) {
+      const batch = list.slice(i, i + BATCH)
+      const batchResults = await Promise.all(batch.map(fetchTickerLite))
+      for (const data of batchResults) {
+        if (!data) continue
         const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
         out.push({ ...data, result })
       }
-      setProgress(Math.round((i + 1) / list.length * 100))
+      setProgress(Math.round(Math.min(i + BATCH, list.length) / list.length * 100))
     }
-    const sorted = out.sort((a, b) => b.result.pct - a.result.pct)
-    setResults(sorted)
+    setResults(out.sort((a, b) => b.result.pct - a.result.pct))
     setLoading(false)
   }, [list])
+
+  const { pull, ready, containerRef } = {}
 
   return (
     <PullToRefresh onRefresh={handleRefresh} enabled={list.length > 0}>
     <div className="page">
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      {/* Add input */}
+      <div style={{ display:'flex', gap:8, marginBottom:12 }}>
         <input className="input" value={input} onChange={e => setInput(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
           placeholder="Add ticker… e.g. NVDA" autoCapitalize="characters" autoCorrect="off" spellCheck={false} />
-        <button className="btn btn-primary" style={{ width: 'auto', padding: '12px 18px' }} onClick={handleAdd}>+</button>
+        <button className="btn btn-primary" style={{ width:'auto', padding:'12px 18px' }} onClick={handleAdd}>+</button>
       </div>
 
       {list.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: '#B2B2B2' }}>
-          <div style={{ fontSize: '3rem', marginBottom: 12 }}>👁</div>
-          <p style={{ fontSize: '0.86rem', lineHeight: 1.8 }}>Your watchlist is empty.<br />Add tickers above or from the Deep Dive tab.</p>
+        <div style={{ textAlign:'center', padding:'60px 0', color:G1 }}>
+          <div style={{ fontSize:'3rem', marginBottom:12 }}>👁</div>
+          <p style={{ fontSize:'0.86rem', lineHeight:1.8 }}>Your watchlist is empty.<br />Add tickers above or from the Dive tab.</p>
         </div>
       ) : (
         <>
-          <button className="btn btn-primary" onClick={handleRefresh} disabled={loading} style={{ marginBottom: 8 }}>
-            {loading ? `Scoring ${progress}%…` : `Refresh Signals (${list.length} tickers)`}
+          <button className="btn btn-primary" onClick={handleRefresh} disabled={loading} style={{ marginBottom:8 }}>
+            {loading ? `Scoring ${progress}%…` : `Score All (${list.length} tickers)`}
           </button>
 
           {loading && <LoadingBar progress={progress} text={`Scoring watchlist… ${progress}%`} />}
 
+          {/* Summary stats */}
           {results.length > 0 && (
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
-              {[['Watching', list.length], ['BUY', results.filter(r => r.result.verdict === 'BUY').length],
-                ['Avg Signal', `${Math.round(results.reduce((s, r) => s + r.result.pct, 0) / results.length)}/100`],
-                ['Top Pick', results[0]?.ticker || '—']].map(([l, v]) => (
-                <div key={l} className="metric-cell" style={{ flex: 1, minWidth: 60 }}>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:12 }}>
+              {[
+                ['Watching', list.length, null],
+                ['BUY', results.filter(r => r.result.verdict === 'BUY').length, GREEN],
+                ['HOLD', results.filter(r => r.result.verdict === 'HOLD').length, YELLOW],
+                ['Avg Score', `${Math.round(results.reduce((s,r) => s + r.result.pct, 0) / results.length)}`, null],
+              ].map(([l, v, c]) => (
+                <div key={l} className="metric-cell" style={{ flex:1, minWidth:60 }}>
                   <div className="metric-label">{l}</div>
-                  <div className="metric-value">{v}</div>
+                  <div className="metric-value" style={c ? { color:c } : {}}>{v}</div>
                 </div>
               ))}
             </div>
           )}
 
-          {/* List — scored or bare */}
-          {(results.length ? results : list.map(t => ({ ticker: t }))).map((item) => {
+          {/* Ticker rows */}
+          {(results.length ? results : list.map(t => ({ ticker:t }))).map((item) => {
             const hasResult = !!item.result
             const r = item.result
             const price = item.quote?.c
             const chg = item.quote?.dp || 0
             const name = item.name || TICKER_NAMES[item.ticker] || item.ticker
+            const canDive = !!onNavigateToDive
+
             return (
-              <div key={item.ticker} className="wl-item">
-                <div className="wl-info" style={{ flex: 1, minWidth: 0 }}>
-                  <div className="wl-ticker">{item.ticker}</div>
-                  <div className="wl-name">{name}</div>
+              <div key={item.ticker}
+                onClick={() => canDive && onNavigateToDive(item.ticker)}
+                style={{
+                  display:'flex', alignItems:'center', gap:10,
+                  background:G2, border:`1px solid ${G4}`, borderRadius:12,
+                  padding:'12px 14px', marginBottom:8,
+                  cursor: canDive ? 'pointer' : 'default',
+                  WebkitTapHighlightColor:'transparent'
+                }}>
+
+                {/* Score badge — shown after scoring */}
+                {hasResult && <ScoreBadge pct={r.pct} verdict={r.verdict} />}
+
+                {/* Ticker + name */}
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontFamily:'var(--font-mono)', fontWeight:700, fontSize:'0.82rem', color:'#fff' }}>{item.ticker}</div>
+                  <div style={{ fontSize:'0.68rem', color:G1, marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{name}</div>
                   {hasResult && (
-                    <div className="wl-signal">
-                      <VerdictPill verdict={r.verdict} />
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: '#B2B2B2' }}>{r.pct.toFixed(0)}/100</span>
+                    <div style={{ marginTop:4 }}>
+                      <SignalBar pct={r.pct} color={r.color} height={3} />
                     </div>
                   )}
                 </div>
+
+                {/* Price */}
                 {hasResult && price && (
-                  <div className="wl-right" style={{ marginRight: 12 }}>
-                    <div className="wl-price">${price.toFixed(2)}</div>
-                    <div className={`wl-chg ${chg >= 0 ? 'pos' : 'neg'}`}>{chg >= 0 ? '+' : ''}{chg.toFixed(2)}%</div>
+                  <div style={{ textAlign:'right', flexShrink:0, marginRight:4 }}>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.8rem', color:'#fff', fontWeight:600 }}>${price.toFixed(2)}</div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color: chg >= 0 ? GREEN : RED, marginTop:2 }}>
+                      {chg >= 0 ? '+' : ''}{chg.toFixed(2)}%
+                    </div>
                   </div>
                 )}
-                <button className="btn btn-danger" style={{ padding: '6px 10px', width: 'auto', fontSize: '0.7rem' }}
-                  onClick={() => remove(item.ticker)}>✕</button>
+
+                {/* Dive arrow */}
+                {canDive && (
+                  <div style={{ color:G1, fontSize:'0.7rem', flexShrink:0 }}>›</div>
+                )}
+
+                {/* Remove button */}
+                <button
+                  className="btn btn-danger"
+                  style={{ padding:'6px 10px', width:'auto', fontSize:'0.7rem', flexShrink:0 }}
+                  onClick={e => { e.stopPropagation(); remove(item.ticker) }}>✕</button>
               </div>
             )
           })}

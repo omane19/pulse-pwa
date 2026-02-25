@@ -89,8 +89,8 @@ export default function App() {
 
       <main className="page-area">
         {activeTab === 'dive'    && <DeepDive initialTicker={diveQuery} />}
-        {activeTab === 'watch'   && <Watchlist />}
-        {activeTab === 'screen'  && <Screener />}
+        {activeTab === 'watch'   && <Watchlist onNavigateToDive={navigateToDive} />}
+        {activeTab === 'screen'  && <Screener onNavigateToDive={navigateToDive} />}
         {activeTab === 'options' && <Options />}
         {activeTab === 'money'   && <SmartMoney />}
         {activeTab === 'compare' && <Compare />}

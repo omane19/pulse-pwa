@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { fetchTickerLite, hasKeys } from '../hooks/useApi.js'
+import { fetchTickerLite, fetchFMPScreener, hasKeys } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { UNIVERSE, TICKER_NAMES } from '../utils/constants.js'
 import { VerdictPill, SignalBar, FactorBars, LoadingBar, PullToRefresh } from './shared.jsx'
@@ -9,7 +9,7 @@ const VERDICTS = ['BUY', 'HOLD', 'AVOID']
 const G1='#B2B2B2'; const G4='#252525'; const GREEN='#00C805'; const RED='#FF5000'; const CYAN='#00E5FF'
 
 /* ── Rank card ── */
-function RankCard({ item, rank, showCat = true }) {
+function RankCard({ item, rank, showCat = true, onNavigate }) {
   const [open, setOpen] = useState(false)
   const r = item.result; const c = r.color
   const price = item.quote?.c; const chg = item.quote?.dp || 0
@@ -45,6 +45,19 @@ function RankCard({ item, rank, showCat = true }) {
 
       {open && (
         <div style={{ marginTop:10 }}>
+          {/* Dive button */}
+          {onNavigate && (
+            <button
+              onClick={e => { e.stopPropagation(); onNavigate(item.ticker) }}
+              style={{
+                width:'100%', marginBottom:10, padding:'10px', borderRadius:8,
+                background:'rgba(0,200,5,0.1)', border:'1px solid rgba(0,200,5,0.3)',
+                color:'#00C805', fontFamily:'var(--font-mono)', fontSize:'0.7rem',
+                cursor:'pointer', letterSpacing:0.5
+              }}>
+              🔍 Full Dive Analysis — {item.ticker} →
+            </button>
+          )}
           <FactorBars scores={r.scores} />
           {/* Factor breakdown reasons */}
           <div style={{ marginTop:10, background:'#0A0A0A', borderRadius:8, padding:'10px 12px' }}>
@@ -99,7 +112,7 @@ function SegmentHeader({ cat, count, topVerdict, topScore }) {
 }
 
 /* ── Main Screener ── */
-export default function Screener() {
+export default function Screener({ onNavigateToDive }) {
   // Mode: 'topN' = top N per segment, 'full' = full scan with filters
   const [mode, setMode] = useState('topN')
   const [topN, setTopN] = useState(3)
@@ -131,30 +144,65 @@ export default function Screener() {
 
   const runScreener = useCallback(async () => {
     const k = hasKeys()
-    if (!k.fh) { setApiError('Finnhub API key missing. Go to the Setup tab.'); return }
+    if (!k.fh && !k.fmp) { setApiError('API key missing. Go to the Setup tab.'); return }
     setApiError(null)
-    if (!allTickers.length) return
     setLoading(true); setProgress(0); setResults([]); setRan(false)
 
     const out = []
+
+    // FMP bulk mode — if FMP key available, pre-filter from 500+ tickers
+    if (k.fmp && selCats.length > 0 && customTickers.length === 0) {
+      setProgressTicker('FMP bulk fetch…')
+      const bulk = await fetchFMPScreener({ minMcap: 500, limit: 500 })
+      if (bulk?.length) {
+        // Get selected tickers from UNIVERSE as whitelist (if specific cats selected)
+        const selectedUniverse = selCats.flatMap(c => UNIVERSE[c] || [])
+        const allSelected = selCats.length === ALL_CATS.length // all cats = no filter
+        // Filter bulk to selected categories OR use all 500+
+        const toScore = allSelected
+          ? bulk.slice(0, 300) // cap at 300 for speed
+          : bulk.filter(s => selectedUniverse.includes(s.ticker) || selectedUniverse.length === 0)
+        
+        const BATCH = 10
+        for (let i = 0; i < toScore.length; i += BATCH) {
+          const batch = toScore.slice(i, i + BATCH)
+          setProgressTicker(batch[0]?.ticker || '')
+          const batchResults = await Promise.all(batch.map(s => fetchTickerLite(s.ticker)))
+          for (const data of batchResults) {
+            if (!data) continue
+            const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
+            const cat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker)) || toScore.find(s => s.ticker === data.ticker)?.sector || 'Market'
+            out.push({ ...data, result, category: cat })
+          }
+          setProgress(Math.round(Math.min(i + BATCH, toScore.length) / toScore.length * 100))
+        }
+        out.sort((a, b) => b.result.pct - a.result.pct)
+        setResults(out); setLoading(false); setRan(true)
+        return
+      }
+    }
+
+    // Fallback — scan curated universe
+    const tickers = [...new Set([...selCats.flatMap(c => UNIVERSE[c] || []), ...customTickers])]
+    if (!tickers.length) { setLoading(false); return }
+
     const BATCH = 10
-    for (let i = 0; i < allTickers.length; i += BATCH) {
-      const batch = allTickers.slice(i, i + BATCH)
+    for (let i = 0; i < tickers.length; i += BATCH) {
+      const batch = tickers.slice(i, i + BATCH)
       setProgressTicker(batch[0])
       const batchResults = await Promise.all(batch.map(fetchTickerLite))
       for (const data of batchResults) {
         if (!data) continue
         const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
-        // Find which category this ticker belongs to (may be in multiple, take first selected)
         const cat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker)) || 'Custom'
         out.push({ ...data, result, category: cat })
       }
-      setProgress(Math.round(Math.min(i + BATCH, allTickers.length) / allTickers.length * 100))
+      setProgress(Math.round(Math.min(i + BATCH, tickers.length) / tickers.length * 100))
     }
 
     out.sort((a, b) => b.result.pct - a.result.pct)
     setResults(out); setLoading(false); setRan(true)
-  }, [allTickers])
+  }, [allTickers, selCats, customTickers])
 
   // Top N mode: group by category, take top N each, sort categories by their best score
   const topNGrouped = useMemo(() => {
@@ -354,7 +402,7 @@ export default function Screener() {
                 topScore={items[0].result.pct.toFixed(0)}
               />
               {items.map((item, idx) => (
-                <RankCard key={item.ticker} item={item} rank={idx} showCat={false} />
+                <RankCard key={item.ticker} item={item} rank={idx} showCat={false} onNavigate={onNavigateToDive} />
               ))}
             </div>
           ))}
@@ -391,7 +439,7 @@ export default function Screener() {
           )}
 
           {filtered.slice(0, 30).map((item, idx) => (
-            <RankCard key={item.ticker} item={item} rank={idx} showCat={true} />
+            <RankCard key={item.ticker} item={item} rank={idx} showCat={true} onNavigate={onNavigateToDive} />
           ))}
         </>
       )}

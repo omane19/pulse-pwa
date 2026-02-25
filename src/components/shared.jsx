@@ -168,3 +168,34 @@ export function PullToRefresh({ onRefresh, enabled = true, children }) {
     </div>
   )
 }
+
+/* ── PC Refresh Button — shows on non-touch devices ── */
+export function RefreshButton({ onRefresh, loading }) {
+  return (
+    <button
+      onClick={onRefresh}
+      disabled={loading}
+      title="Refresh data"
+      style={{
+        position: 'fixed',
+        top: 'calc(var(--header-h) + 10px)',
+        right: 16,
+        zIndex: 200,
+        width: 36, height: 36,
+        borderRadius: '50%',
+        background: 'rgba(0,200,5,0.08)',
+        border: '1px solid rgba(0,200,5,0.25)',
+        color: '#00C805',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: loading ? 'default' : 'pointer',
+        opacity: loading ? 0.5 : 1,
+        fontSize: '0.9rem',
+        WebkitTapHighlightColor: 'transparent',
+        // Only show on non-touch (desktop)
+        '@media (hover: none)': { display: 'none' },
+      }}
+    >
+      <span style={{ display: 'inline-block', animation: loading ? 'ptr-spin 0.8s linear infinite' : 'none' }}>↻</span>
+    </button>
+  )
+}

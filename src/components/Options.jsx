@@ -6,6 +6,84 @@ import { EarningsWarning, LoadingBar, SectionHeader, PullToRefresh } from './sha
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
+/* ── Strike Calculator ── */
+function calcStrikes(price, verdict, rsi) {
+  if (!price) return null
+  const dteOptions = [21, 35, 45]
+  const dte = rsi && rsi > 65 ? 35 : rsi && rsi < 35 ? 21 : 45
+
+  // Round to nearest standard strike increment
+  const inc = price < 20 ? 0.5 : price < 50 ? 1 : price < 100 ? 2.5 : price < 200 ? 5 : price < 500 ? 10 : 25
+  const round = (n) => Math.round(n / inc) * inc
+
+  const expiry = new Date()
+  expiry.setDate(expiry.getDate() + dte)
+  // Move to next Friday
+  const day = expiry.getDay()
+  if (day !== 5) expiry.setDate(expiry.getDate() + ((5 - day + 7) % 7))
+  const expStr = expiry.toLocaleDateString('en-US', { month:'short', day:'numeric' })
+
+  if (verdict === 'BUY') {
+    const callStrike = round(price * 1.05)
+    const spreadSell = round(price * 1.12)
+    return {
+      primary: { name:'Long Call', strike:`$${callStrike}`, expiry:`${expStr} (${dte} DTE)`, cost:`~$${Math.round(price * 0.04 * 100)} premium`, action:`Buy ${callStrike}C exp ${expStr}` },
+      spread:  { name:'Bull Call Spread', buy:`$${callStrike}`, sell:`$${spreadSell}`, expiry:`${expStr}`, maxGain:`$${Math.round((spreadSell-callStrike)*100 - price*0.015*100)}`, action:`Buy ${callStrike}C / Sell ${spreadSell}C exp ${expStr}` }
+    }
+  }
+  if (verdict === 'AVOID') {
+    const putStrike = round(price * 0.95)
+    const spreadBuy = round(price * 0.88)
+    return {
+      primary: { name:'Long Put', strike:`$${putStrike}`, expiry:`${expStr} (${dte} DTE)`, cost:`~$${Math.round(price * 0.04 * 100)} premium`, action:`Buy ${putStrike}P exp ${expStr}` },
+      spread:  { name:'Bear Put Spread', buy:`$${putStrike}`, sell:`$${spreadBuy}`, expiry:`${expStr}`, maxGain:`$${Math.round((putStrike-spreadBuy)*100 - price*0.015*100)}`, action:`Buy ${putStrike}P / Sell ${spreadBuy}P exp ${expStr}` }
+    }
+  }
+  // HOLD — condor levels
+  const callSell = round(price * 1.05)
+  const callBuy  = round(price * 1.10)
+  const putSell  = round(price * 0.95)
+  const putBuy   = round(price * 0.90)
+  return {
+    primary: { name:'Iron Condor', expiry:`${expStr} (${dte} DTE)`, action:`Sell ${putSell}P / Buy ${putBuy}P / Sell ${callSell}C / Buy ${callBuy}C exp ${expStr}`, cost:`Collect ~$${Math.round(price*0.025*100)} credit` },
+    spread: null
+  }
+}
+
+function StrikeBox({ strikes, verdict, price }) {
+  if (!strikes || !price) return null
+  const color = verdict === 'BUY' ? '#00C805' : verdict === 'AVOID' ? '#FF5000' : '#FFD700'
+  return (
+    <div style={{ background:'rgba(0,229,255,0.04)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:12, padding:'14px 16px', marginBottom:14 }}>
+      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#00E5FF', letterSpacing:2, textTransform:'uppercase', marginBottom:10 }}>📐 Specific Strikes — Current Price ${price.toFixed(2)}</div>
+
+      {/* Primary trade */}
+      <div style={{ background:'#0A0A0A', borderRadius:10, padding:'12px 14px', marginBottom:8 }}>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color, marginBottom:6, fontWeight:600 }}>{strikes.primary.name}</div>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.78rem', color:'#fff', marginBottom:4 }}>→ {strikes.primary.action}</div>
+        {strikes.primary.strike && <div style={{ fontSize:'0.72rem', color:'#B2B2B2' }}>Strike: {strikes.primary.strike} · Expiry: {strikes.primary.expiry}</div>}
+        {strikes.primary.expiry && !strikes.primary.strike && <div style={{ fontSize:'0.72rem', color:'#B2B2B2' }}>Expiry: {strikes.primary.expiry}</div>}
+        <div style={{ fontSize:'0.72rem', color:'#B2B2B2', marginTop:2 }}>{strikes.primary.cost}</div>
+      </div>
+
+      {/* Spread alternative */}
+      {strikes.spread && (
+        <div style={{ background:'#0A0A0A', borderRadius:10, padding:'12px 14px' }}>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#B2B2B2', marginBottom:6 }}>{strikes.spread.name} (lower cost)</div>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.78rem', color:'#fff', marginBottom:4 }}>→ {strikes.spread.action}</div>
+          <div style={{ fontSize:'0.72rem', color:'#B2B2B2' }}>Max gain: {strikes.spread.maxGain} · Expiry: {strikes.spread.expiry}</div>
+        </div>
+      )}
+
+      <div style={{ marginTop:10, fontSize:'0.68rem', color:'#B2B2B2', lineHeight:1.6 }}>
+        ⚠ Strikes are calculated from current price. Verify on your broker before placing. These are starting points — adjust to your risk tolerance.
+      </div>
+    </div>
+  )
+}
+
+
+
 function RiskTag({ level }) {
   const cols = { High:'#FF5000', Limited:'#FFD700', 'Premium paid':'#FFD700', 'Capped upside':'#FFD700', 'Own shares at lower price':'#FFD700', 'Opportunity cost':'#B2B2B2', Unlimited:'#00C805', 'Premium income':'#00C805', 'High (stock falls)':'#00C805', Capped:'#B2B2B2', 'Capital preservation':'#00C805' }
   return <span style={{ background: (cols[level]||G4)+'20', color: cols[level]||G1, border:`1px solid ${cols[level]||G4}40`, padding:'1px 8px', borderRadius:4, fontFamily:'var(--font-mono)', fontSize:'0.6rem', marginLeft:4 }}>{level}</span>
@@ -175,6 +253,9 @@ function TickerOptionsGuide({ ticker, result, price, ec, metrics, candles }) {
       </div>
 
       <EarningsWarning ec={ec} />
+
+      {/* Specific strikes */}
+      <StrikeBox strikes={calcStrikes(price, verdict, rsi)} verdict={verdict} price={price} />
 
       {/* Live context */}
       <SectionHeader>Live Signals for {ticker}</SectionHeader>
