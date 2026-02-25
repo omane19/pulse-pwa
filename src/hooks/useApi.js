@@ -97,7 +97,7 @@ export async function fetchQuote(ticker) {
     if (q?.price) {
       return {
         c: q.price, pc: q.previousClose || q.price,
-        d: q.change || 0, dp: q.changesPercentage || 0,
+        d: q.change || 0, dp: q.changePercentage || q.changesPercentage || 0,
         h: q.dayHigh || q.price, l: q.dayLow || q.price,
         v: q.volume || 0, mc: q.marketCap || 0,
         source: 'fmp'
@@ -207,7 +207,7 @@ export async function fetchMetrics(ticker) {
 ══════════════════════════════════════════ */
 export async function fetchNews(ticker, days = 10) {
   if (hasKeys().fmp) {
-    const d = await fmp(`/stock-news?symbols=${ticker}&limit=30`, 120000)
+    const d = await fmp(`/news/stock?symbols=${ticker}&limit=30`, 120000)
     if (Array.isArray(d) && d.length) {
       return d.slice(0, 30).filter(a => a.title).map(a => ({
         title: a.title, body: (a.text || '').slice(0, 700),
@@ -229,7 +229,7 @@ export async function fetchNews(ticker, days = 10) {
 /* ── Region news for Global tab ── */
 export async function fetchRegionNews(proxy) {
   if (hasKeys().fmp) {
-    const d = await fmp(`/stock-news?symbols=${proxy}&limit=5`, 600000)
+    const d = await fmp(`/news/stock?symbols=${proxy}&limit=5`, 600000)
     if (Array.isArray(d) && d.length) {
       return d.slice(0, 5).map(a => ({
         title: a.title, source: a.site || 'Unknown',
@@ -341,7 +341,7 @@ export async function fetchFMPScreener({ minMcap = 500, limit = 500 } = {}) {
    Insider: /api/v4/insider-trading (confirmed v4)
 ══════════════════════════════════════════ */
 export async function fetchFMPCongressional(ticker) {
-  const d = await fmp(`/senate-trading?symbol=${ticker}`, 3600000)
+  const d = await fmp(`/senate-trades?symbol=${ticker}`, 3600000)
   if (!Array.isArray(d) || !d.length) return []
   return d.slice(0, 20).map(t => ({
     name:    (t.firstName || '') + ' ' + (t.lastName || ''),
@@ -356,7 +356,7 @@ export async function fetchFMPCongressional(ticker) {
 }
 
 export async function fetchFMPInsider(ticker) {
-  const d = await fmpv4(`/insider-trading?symbol=${ticker}&limit=30`, 300000)
+  const d = await fmp(`/insider-trading/search?symbol=${ticker}&limit=30`, 300000)
   if (!Array.isArray(d) || !d.length) return []
   return d.slice(0, 30).map(t => ({
     name:        t.reportingName || 'Unknown',
@@ -373,7 +373,7 @@ export async function fetchFMPInsider(ticker) {
 }
 
 export async function fetchFMPRecentInsider() {
-  const d = await fmpv4(`/insider-trading?transactionType=P-Purchase&limit=50`, 120000)
+  const d = await fmp(`/insider-trading/latest?page=0&limit=50`, 120000)
   if (!Array.isArray(d)) return []
   return d.slice(0, 50).map(t => ({
     name:   t.reportingName || 'Unknown',
@@ -388,10 +388,10 @@ export async function fetchFMPRecentInsider() {
 }
 
 export async function fetchFMPRecentCongress() {
-  // Also fetch House trades for better coverage
+  // senate-latest and house-latest = market-wide feed, no symbol required
   const [senate, house] = await Promise.all([
-    fmp(`/senate-trading?limit=50`, 120000),
-    fmp(`/house-trading?limit=50`, 120000),
+    fmp(`/senate-latest?page=0&limit=50`, 120000),
+    fmp(`/house-latest?page=0&limit=50`, 120000),
   ])
   const all = [...(Array.isArray(senate) ? senate : []), ...(Array.isArray(house) ? house : [])]
   return all.filter(t => {
