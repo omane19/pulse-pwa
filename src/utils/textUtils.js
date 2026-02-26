@@ -1,3 +1,5 @@
+import { SOURCE_TIERS } from './constants.js'
+
 export function timeAgo(ts) {
   if (!ts) return { label: '?', badge: 'old' }
   const secs = (Date.now() - ts * 1000) / 1000
