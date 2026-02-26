@@ -1,4 +1,5 @@
-//import { SOURCE_TIERS } from './constants.js'
+import { SOURCE_TIERS } from './constants.js'
+import { getTier } from './textUtils.js'
 
 // ── Simple sentiment (AFINN-style word list, no external lib) ────
 const POS_WORDS = new Set(["beat","beats","surge","surged","soar","soared","rally","rallied","profit","profits","gain","gains","growth","grew","strong","record","upgrade","upgraded","buy","outperform","raised","raise","exceeds","exceeded","positive","bullish","recovery","recovered","expand","expanding","revenue","solid","robust","better","improved","improvement","boost","boosted","higher","rise","rose","increase","increased","top","topped","above","ahead"])
