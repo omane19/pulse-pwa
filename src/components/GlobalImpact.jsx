@@ -1,11 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { fetchQuote, fetchRegionNews } from '../hooks/useApi.js'
+import { fetchQuote, fetchRegionNews, fetchTickerLite } from '../hooks/useApi.js'
+import { scoreAsset } from '../utils/scoring.js'
 import { PullToRefresh } from './shared.jsx'
 import { GLOBAL_CHAINS, TICKER_NAMES } from '../utils/constants.js'
 
 const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
-function RegionCard({ chain, price, loadingPrices, onNavigate }) {
+function MiniScore({ pct, verdict }) {
+  if (pct == null) return <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:'#555' }}>…</span>
+  const color = verdict === 'BUY' ? '#00C805' : verdict === 'HOLD' ? '#FFD700' : '#FF5000'
+  return <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color, background:`${color}15`, padding:'1px 5px', borderRadius:4, marginLeft:4 }}>{Math.round(pct)}</span>
+}
+
+function RegionCard({ chain, price, loadingPrices, onNavigate, tickerScores }) {
   const [news, setNews]         = useState([])
   const [newsLoading, setNewsLoading] = useState(false)
   const [newsLoaded, setNewsLoaded]   = useState(false)
@@ -69,8 +76,9 @@ function RegionCard({ chain, price, loadingPrices, onNavigate }) {
           <button key={t} className="ticker-chip"
             title={TICKER_NAMES[t] || t}
             onClick={() => onNavigate && onNavigate(t)}
-            style={{ cursor:'pointer', background:'transparent', border:'none', padding:0, color:'inherit', font:'inherit', WebkitTapHighlightColor:'transparent' }}>
-            {t} ↗
+            style={{ cursor:'pointer', background:'transparent', border:'none', padding:0, color:'inherit', font:'inherit', WebkitTapHighlightColor:'transparent', display:'inline-flex', alignItems:'center', gap:2 }}>
+            {t}
+            <MiniScore pct={tickerScores?.[t]?.pct} verdict={tickerScores?.[t]?.verdict} />
           </button>
         ))}
       </div>
@@ -93,6 +101,7 @@ function RegionCard({ chain, price, loadingPrices, onNavigate }) {
 export default function GlobalImpact({ onNavigate }) {
   const [prices, setPrices]           = useState({})
   const [loadingPrices, setLoadingPrices] = useState(false)
+  const [tickerScores, setTickerScores]   = useState({})
 
   const loadPrices = useCallback(async () => {
     setLoadingPrices(true)
@@ -102,6 +111,21 @@ export default function GlobalImpact({ onNavigate }) {
     results.forEach(([p, q]) => { if (q) map[p] = q })
     setPrices(map)
     setLoadingPrices(false)
+
+    // Fetch mini scores for all affected tickers in background
+    const allTickers = [...new Set(GLOBAL_CHAINS.flatMap(c => c.affects))]
+    const BATCH = 4
+    for (let i = 0; i < allTickers.length; i += BATCH) {
+      const batch = allTickers.slice(i, i + BATCH)
+      const batchData = await Promise.all(batch.map(fetchTickerLite))
+      const scores = {}
+      batchData.forEach((data, idx) => {
+        if (!data) return
+        const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
+        scores[batch[idx]] = { pct: r.pct, verdict: r.verdict }
+      })
+      setTickerScores(prev => ({ ...prev, ...scores }))
+    }
   }, [])
 
   useEffect(() => { loadPrices() }, [])
@@ -123,6 +147,7 @@ export default function GlobalImpact({ onNavigate }) {
           price={prices[chain.proxy]}
           loadingPrices={loadingPrices}
           onNavigate={onNavigate}
+          tickerScores={tickerScores}
         />
       ))}
     </div>

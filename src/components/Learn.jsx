@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { fetchMacroLive } from '../hooks/useApi.js'
+import { fetchMacroLive, fetchQuote, fetchCandles } from '../hooks/useApi.js'
 import { EDUCATION, GLOSSARY, MACRO } from '../utils/constants.js'
 
 const GREEN='#00C805'; const YELLOW='#FFD700'; const CYAN='#00E5FF'; const RED='#FF5000'
@@ -227,14 +227,47 @@ function TopicCard({ topic }) {
 }
 
 function MacroView() {
-  const [macro, setMacro]     = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [loaded, setLoaded]   = useState(false)
+  const [macro, setMacro]       = useState(null)
+  const [loading, setLoading]   = useState(false)
+  const [loaded, setLoaded]     = useState(false)
+  const [liveRegime, setLiveRegime] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const data = await fetchMacroLive()
-    setMacro(data); setLoaded(true); setLoading(false)
+    const [data, spyQuote, spyCandles] = await Promise.all([
+      fetchMacroLive(),
+      fetchQuote('SPY'),
+      fetchCandles('SPY', 260),
+    ])
+    setMacro(data)
+    setLoaded(true)
+    setLoading(false)
+
+    // Compute live regime from SPY data
+    if (spyQuote && spyCandles) {
+      const price  = spyQuote.c
+      const c      = spyCandles.closes
+      const ma50   = spyCandles.ma50
+      const ma200  = spyCandles.ma200
+      const mom1d  = spyQuote.dp || 0
+      const mom1m  = c.length >= 20 ? ((price / c[c.length - 20] - 1) * 100) : null
+      const mom3m  = c.length >= 60 ? ((price / c[c.length - 60] - 1) * 100) : null
+      const aboveMa50  = ma50  ? price > ma50  : null
+      const aboveMa200 = ma200 ? price > ma200 : null
+
+      let regime, riskColor
+      if (aboveMa50 && aboveMa200 && mom3m > 5) {
+        regime = 'Risk-On · Bull Market'; riskColor = '#00C805'
+      } else if (aboveMa200 && mom3m > -5) {
+        regime = 'Neutral · Consolidation'; riskColor = '#FFD700'
+      } else if (!aboveMa200 || mom3m < -10) {
+        regime = 'Risk-Off · Bear Market'; riskColor = '#FF5000'
+      } else {
+        regime = 'Transition · Watch Closely'; riskColor = '#FFD700'
+      }
+      const spyDisplay = `SPY $${price?.toFixed(0)} · 1d ${mom1d >= 0 ? '+' : ''}${mom1d.toFixed(1)}% · 3m ${mom3m != null ? (mom3m >= 0 ? '+' : '') + mom3m.toFixed(1) + '%' : '—'} · ${aboveMa50 ? '↑' : '↓'} MA50 · ${aboveMa200 ? '↑' : '↓'} MA200`
+      setLiveRegime({ label: regime, color: riskColor, detail: spyDisplay })
+    }
   }, [])
 
   useEffect(() => { load() }, [])
@@ -244,8 +277,21 @@ function MacroView() {
   return (
     <div className="fade-up">
       <div style={{ background:'rgba(0,229,255,0.04)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:14, padding:'18px 20px', marginBottom:12 }}>
-        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:CYAN, letterSpacing:2, textTransform:'uppercase', marginBottom:6 }}>Current Regime</div>
-        <div style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.05rem', letterSpacing:-0.5, marginBottom:10 }}>{MACRO.regime}</div>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:CYAN, letterSpacing:2, textTransform:'uppercase', marginBottom:6 }}>Current Regime · Live</div>
+        {liveRegime ? (
+          <>
+            <div style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.05rem', letterSpacing:-0.5, marginBottom:6, color: liveRegime.color }}>
+              {liveRegime.label}
+            </div>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#888', marginBottom:10 }}>
+              {liveRegime.detail}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:'1.05rem', letterSpacing:-0.5, marginBottom:10 }}>
+            {MACRO.regime}
+          </div>
+        )}
         <div style={{ fontSize:'0.78rem', color:G1, lineHeight:1.8 }}>{MACRO.summary}</div>
       </div>
 
@@ -298,12 +344,48 @@ function MacroView() {
               </div>
             )
           })}
-          {macro.yieldData && (
-            <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${G4}`, display:'flex', justifyContent:'space-between' }}>
-              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:G1 }}>10-Yr Treasury Yield</span>
-              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.7rem', color:YELLOW }}>{macro.yieldData.toFixed(2)}%</span>
-            </div>
-          )}
+        </div>
+      )}
+
+      {/* Yield Curve */}
+      {macro?.yieldCurve && (
+        <div style={{ background:G2, border:`1px solid ${macro.yieldCurve.inverted ? 'rgba(255,80,0,0.4)' : G4}`, borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:CYAN, letterSpacing:1, textTransform:'uppercase' }}>📈 US Treasury Yield Curve</div>
+            {macro.yieldCurve.inverted && (
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:RED, background:'rgba(255,80,0,0.1)', border:'1px solid rgba(255,80,0,0.3)', borderRadius:6, padding:'2px 8px' }}>⚠ INVERTED</div>
+            )}
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+            {[['1Y', macro.yieldCurve.y1],['2Y', macro.yieldCurve.y2],['5Y', macro.yieldCurve.y5],['10Y', macro.yieldCurve.y10],['30Y', macro.yieldCurve.y30]].map(([label, val]) => (
+              <div key={label} style={{ textAlign:'center', flex:1 }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:YELLOW }}>{val ? val.toFixed(2) + '%' : '—'}</div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.54rem', color:'#666', marginTop:2 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color: macro.yieldCurve.spread10_2 < 0 ? RED : G1, marginTop:4 }}>
+            10Y−2Y spread: {macro.yieldCurve.spread10_2 > 0 ? '+' : ''}{macro.yieldCurve.spread10_2?.toFixed(2)}%
+            {macro.yieldCurve.inverted ? ' — Yield curve inverted, historically precedes recession' : ' — Normal curve'}
+          </div>
+        </div>
+      )}
+
+      {/* Economic Indicators */}
+      {macro?.econData && (
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:12 }}>
+          {Object.values(macro.econData).map(ind => {
+            if (ind.value == null) return null
+            const delta = ind.prev != null ? ind.value - ind.prev : null
+            const isGood = ind.label === 'GDP Growth' ? ind.value > 2 : ind.label === 'Unemployment' ? ind.value < 4.5 : ind.value < 3
+            return (
+              <div key={ind.label} style={{ background:G2, border:`1px solid ${G4}`, borderRadius:10, padding:'10px 12px' }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#888', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>{ind.label}</div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'1rem', fontWeight:700, color: isGood ? GREEN : RED }}>{ind.value.toFixed(1)}{ind.unit}</div>
+                {delta != null && <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color: delta > 0 ? (ind.label === 'Unemployment' ? RED : GREEN) : (ind.label === 'Unemployment' ? GREEN : RED), marginTop:2 }}>{delta > 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(1)}{ind.unit} vs prev</div>}
+              </div>
+            )
+          })}
         </div>
       )}
 

@@ -10,11 +10,11 @@ const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
 async function loadOne(ticker) {
   const [quote, candles, metrics, news, rec, earnings, profile] = await Promise.all([
-    fetchQuote(ticker), fetchCandles(ticker,150), fetchMetrics(ticker),
+    fetchQuote(ticker), fetchCandles(ticker,260), fetchMetrics(ticker),
     fetchNews(ticker,7), fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker)
   ])
   if (!quote) return null
-  const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, news||[], rec||{}, earnings||[])
+  const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, news||[], rec||{}, earnings||[], undefined, { priceTarget: null, upgrades: [] })
   return { ticker, quote, candles, metrics:metrics||{}, result, profile:profile||{},
     name: profile?.name || TICKER_NAMES[ticker] || ticker }
 }
@@ -168,8 +168,12 @@ export default function Compare() {
               ['1-Month', d=>d.result.mom?.['1m']!=null?`${d.result.mom['1m']>=0?'+':''}${d.result.mom['1m']}%`:'—', d=>d.result.mom?.['1m']>=0?GREEN:RED],
               ['3-Month', d=>d.result.mom?.['3m']!=null?`${d.result.mom['3m']>=0?'+':''}${d.result.mom['3m']}%`:'—', d=>d.result.mom?.['3m']>=0?GREEN:RED],
               ['RSI-14', d=>d.result.mom?.rsi??'—', d=>{const r=d.result.mom?.rsi;return r>70?RED:r<30?GREEN:G1}],
-              ['P/E', d=>d.result.pe?`${d.result.pe.toFixed(1)}×`:'—', null],
+              ['P/E (TTM)', d=>d.result.pe?`${d.result.pe.toFixed(1)}×`:'—', d=>d.result.pe&&d.result.pe<20?GREEN:d.result.pe>35?RED:YELLOW],
+              ['PEG Ratio', d=>d.metrics?.pegRatio?`${d.metrics.pegRatio.toFixed(2)}×`:'—', d=>d.metrics?.pegRatio<1?GREEN:d.metrics?.pegRatio>2?RED:YELLOW],
+              ['FCF/Share', d=>d.metrics?.fcfPerShare!=null?`$${d.metrics.fcfPerShare}`:'—', d=>d.metrics?.fcfPerShare>0?GREEN:d.metrics?.fcfPerShare<0?RED:null],
+              ['Rev Growth', d=>d.metrics?.revenueGrowthYoY!=null?`${d.metrics.revenueGrowthYoY>0?'+':''}${d.metrics.revenueGrowthYoY}%`:'—', d=>d.metrics?.revenueGrowthYoY>10?GREEN:d.metrics?.revenueGrowthYoY<0?RED:YELLOW],
               ['50-Day MA', d=>d.candles?.ma50?`$${d.candles.ma50}`:'—', d=>d.quote?.c>d.candles?.ma50?GREEN:RED],
+              ['200-Day MA', d=>d.candles?.ma200?`$${d.candles.ma200}`:'—', d=>d.quote?.c>d.candles?.ma200?GREEN:RED],
               ['Mkt Cap', d=>fmtMcap(d.profile?.marketCapitalization), null],
               ['Signal', d=>`${d.result.pct.toFixed(0)}/100`, d=>d.result.color],
             ].map(([l,fn,col],i)=>(

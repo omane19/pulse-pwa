@@ -19,10 +19,18 @@ export function hasKeys() {
   }
 }
 
-/* ── Cache ── */
+/* ── Cache (max 300 entries, evict oldest on overflow) ── */
 const cache = new Map()
+const MAX_CACHE = 300
 function cGet(k, ttl) { const e = cache.get(k); return e && Date.now()-e.ts < ttl ? e.d : null }
-function cSet(k, d)   { cache.set(k, { d, ts: Date.now() }) }
+function cSet(k, d)   {
+  if (cache.size >= MAX_CACHE) {
+    // Evict oldest 50 entries
+    const keys = [...cache.keys()].slice(0, 50)
+    keys.forEach(key => cache.delete(key))
+  }
+  cache.set(k, { d, ts: Date.now() })
+}
 
 /* ── Fetch with timeout + retry ── */
 async function go(url, retries = 1) {
@@ -124,7 +132,7 @@ export async function fetchQuote(ticker) {
 /* ══════════════════════════════════════════
    CANDLES — FMP /stable/historical-price-eod/full primary
 ══════════════════════════════════════════ */
-export async function fetchCandles(ticker, days = 150) {
+export async function fetchCandles(ticker, days = 260) {
   if (hasKeys().fmp) {
     const from = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]
     const d = await fmp(`/historical-price-eod/full?symbol=${ticker}&from=${from}`, 600000)
@@ -138,12 +146,16 @@ export async function fetchCandles(ticker, days = 150) {
       const opens     = sorted.map(c => c.open)
       const volumes   = sorted.map(c => c.volume || 0)
       const timestamps = sorted.map(c => Math.floor(new Date(c.date).getTime() / 1000))
-      let ma50 = null
+      let ma50 = null, ma200 = null
       if (closes.length >= 50) {
         const sl = closes.slice(-50)
         ma50 = parseFloat((sl.reduce((a, b) => a + b, 0) / 50).toFixed(2))
       }
-      return { closes, highs, lows, opens, volumes, timestamps, ma50, source: 'fmp' }
+      if (closes.length >= 100) {
+        const sl = closes.slice(-200)
+        ma200 = parseFloat((sl.reduce((a, b) => a + b, 0) / sl.length).toFixed(2))
+      }
+      return { closes, highs, lows, opens, volumes, timestamps, ma50, ma200, source: 'fmp' }
     }
   }
   // Finnhub fallback
@@ -151,12 +163,16 @@ export async function fetchCandles(ticker, days = 150) {
   const to   = Math.floor(Date.now() / 1000)
   const d    = await fh(`/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}`, 600000)
   if (!d || d.s === 'no_data' || !d.c?.length) return null
-  let ma50 = null
+  let ma50 = null, ma200 = null
   if (d.c.length >= 50) {
     const sl = d.c.slice(-50)
     ma50 = parseFloat((sl.reduce((a, b) => a + b, 0) / 50).toFixed(2))
   }
-  return { closes: d.c, highs: d.h, lows: d.l, opens: d.o || d.c, volumes: d.v, timestamps: d.t, ma50, source: 'finnhub' }
+  if (d.c.length >= 100) {
+    const sl = d.c.slice(-200)
+    ma200 = parseFloat((sl.reduce((a, b) => a + b, 0) / sl.length).toFixed(2))
+  }
+  return { closes: d.c, highs: d.h, lows: d.l, opens: d.o || d.c, volumes: d.v, timestamps: d.t, ma50, ma200, source: 'finnhub' }
 }
 
 /* ══════════════════════════════════════════
@@ -164,23 +180,62 @@ export async function fetchCandles(ticker, days = 150) {
 ══════════════════════════════════════════ */
 export async function fetchMetrics(ticker) {
   if (hasKeys().fmp) {
-    const [profileArr, ratiosArr] = await Promise.all([
+    const [profileArr, ratiosArr, cashFlowArr, incomeArr, balanceArr] = await Promise.all([
       fmp(`/profile?symbol=${ticker}`, 3600000),
       fmp(`/ratios-ttm?symbol=${ticker}`, 3600000),
+      fmp(`/cash-flow-statement?symbol=${ticker}&period=annual&limit=2`, 3600000),
+      fmp(`/income-statement?symbol=${ticker}&period=annual&limit=2`, 3600000),
+      fmp(`/balance-sheet-statement?symbol=${ticker}&period=annual&limit=1`, 3600000),
     ])
-    const p = Array.isArray(profileArr) ? profileArr[0] : profileArr
-    const r = Array.isArray(ratiosArr)  ? ratiosArr[0]  : ratiosArr
+    const p   = Array.isArray(profileArr)  ? profileArr[0]  : profileArr
+    const r   = Array.isArray(ratiosArr)   ? ratiosArr[0]   : ratiosArr
+    const cf  = Array.isArray(cashFlowArr) ? cashFlowArr[0] : cashFlowArr
+    const inc = Array.isArray(incomeArr)   ? incomeArr      : []
+    const bs  = Array.isArray(balanceArr)  ? balanceArr[0]  : balanceArr
     if (p?.symbol) {
+      // Revenue growth YoY
+      let revenueGrowthYoY = null
+      if (inc.length >= 2 && inc[0].revenue && inc[1].revenue) {
+        revenueGrowthYoY = parseFloat(((inc[0].revenue - inc[1].revenue) / Math.abs(inc[1].revenue) * 100).toFixed(1))
+      }
+      // FCF per share
+      const sharesOutstanding = p.sharesOutstanding || cf?.weightedAverageShsOut || null
+      const fcf = cf?.freeCashFlow || null
+      const fcfPerShare = (fcf && sharesOutstanding && sharesOutstanding > 0)
+        ? parseFloat((fcf / sharesOutstanding).toFixed(2)) : null
+      // PEG = P/E / earnings growth rate
+      const pegRatio = r?.priceToEarningsGrowthRatioTTM || null
+      // Balance sheet derived metrics
+      const totalDebt        = bs ? (bs.shortTermDebt || 0) + (bs.longTermDebt || 0) : null
+      const totalEquity      = bs?.totalStockholdersEquity || null
+      const totalCurrentAssets = bs?.totalCurrentAssets || null
+      const totalCurrentLiab   = bs?.totalCurrentLiabilities || null
+      const cashAndEquiv     = bs?.cashAndCashEquivalents || bs?.cashAndShortTermInvestments || null
+      const debtToEquity     = (totalDebt != null && totalEquity && totalEquity > 0)
+        ? parseFloat((totalDebt / totalEquity).toFixed(2)) : null
+      const currentRatio     = (totalCurrentAssets && totalCurrentLiab && totalCurrentLiab > 0)
+        ? parseFloat((totalCurrentAssets / totalCurrentLiab).toFixed(2)) : null
+      const netCash          = (cashAndEquiv != null && totalDebt != null)
+        ? parseFloat(((cashAndEquiv - totalDebt) / 1e9).toFixed(2)) : null  // in billions
+      // Dividend yield (annual div / price)
+      const divYield = p.lastDiv && p.price ? parseFloat((p.lastDiv / p.price * 100).toFixed(2)) : null
       return {
-        peTTM:     r?.priceToEarningsRatioTTM || null,
-        pbAnnual:  r?.priceToBookRatioTTM || null,
-        roeTTM:    null,
-        marketCap: p.mktCap || null,
-        beta:      p.beta || null,
+        peTTM:           r?.priceToEarningsRatioTTM || null,
+        pbAnnual:        r?.priceToBookRatioTTM || null,
+        roeTTM:          r?.returnOnEquityTTM ? r.returnOnEquityTTM * 100 : null,
+        marketCap:       p.mktCap || null,
+        beta:            p.beta || null,
+        fcfPerShare,
+        pegRatio,
+        revenueGrowthYoY,
+        debtToEquity,
+        currentRatio,
+        netCash,
+        divYield,
         _fmp: {
           sector:       p.sector || null,
           description:  p.description || null,
-          divYield:     p.lastDiv || null,
+          divYield,
           targetPrice:  p.dcf || null,
         },
         source: 'fmp'
@@ -256,6 +311,26 @@ export async function fetchRegionNews(proxy) {
    ANALYST, EARNINGS, PROFILE, INSIDER
 ══════════════════════════════════════════ */
 export async function fetchRec(ticker) {
+  // FMP primary — /stable/analyst-stock-recommendations
+  if (hasKeys().fmp) {
+    try {
+      const d = await fmp(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
+      if (Array.isArray(d) && d.length) {
+        // FMP returns array sorted newest first
+        // Normalize field names to match what scoreAsset expects
+        const normalize = (r) => ({
+          strongBuy:   r.analystRatingsStrongBuy  || 0,
+          buy:         r.analystRatingsBuy         || 0,
+          hold:        r.analystRatingsHold        || 0,
+          sell:        r.analystRatingsSell        || 0,
+          strongSell:  r.analystRatingsStrongSell  || 0,
+          period:      r.date || null,
+        })
+        return { current: normalize(d[0]), history: d.slice(0, 12).map(normalize) }
+      }
+    } catch {}
+  }
+  // Finnhub fallback
   const d = await fh(`/stock/recommendation?symbol=${ticker}`, 300000)
   if (!Array.isArray(d) || !d.length) return { current: {}, history: [] }
   return { current: d[0], history: d.slice(0, 12) }
@@ -303,9 +378,13 @@ export async function fetchMacroLive() {
   const from = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
   const to   = new Date(Date.now() + 45 * 86400000).toISOString().split('T')[0]
 
-  const [calendar, sectors] = await Promise.all([
+  const [calendar, sectors, treasuryRaw, gdpRaw, cpiRaw, unemployRaw] = await Promise.all([
     fmp(`/economic-calendar?from=${from}&to=${to}`, 1800000),
     fmp(`/sector-performance`, 1800000),
+    fmp(`/treasury-rates`, 3600000),
+    fmp(`/economic-indicator?name=GDP&limit=4`, 3600000),
+    fmp(`/economic-indicator?name=CPI&limit=4`, 3600000),
+    fmp(`/economic-indicator?name=unemploymentRate&limit=4`, 3600000),
   ])
 
   const KEY_EVENTS = ['FOMC','Federal Reserve','CPI','GDP','Nonfarm','Unemployment','PCE','PPI','Retail Sales','ISM']
@@ -327,7 +406,29 @@ export async function fetchMacroLive() {
     ? sectors.map(s => ({ name: s.sector, change: parseFloat(s.changesPercentage || 0) })).sort((a, b) => b.change - a.change)
     : []
 
-  return { events, sectorData }
+  // Treasury yield curve
+  const treasury = Array.isArray(treasuryRaw) ? treasuryRaw[0] : (treasuryRaw || null)
+  const yieldCurve = treasury ? {
+    y1:  parseFloat(treasury.year1  || 0),
+    y2:  parseFloat(treasury.year2  || 0),
+    y5:  parseFloat(treasury.year5  || 0),
+    y10: parseFloat(treasury.year10 || 0),
+    y30: parseFloat(treasury.year30 || 0),
+    inverted: (treasury.year2 || 0) > (treasury.year10 || 0),
+    spread10_2: parseFloat(((treasury.year10 || 0) - (treasury.year2 || 0)).toFixed(2)),
+    date: treasury.date || null,
+  } : null
+
+  // Economic indicators — latest reading
+  const latestVal = (arr) => Array.isArray(arr) && arr.length ? parseFloat(arr[0].value || 0) : null
+  const prevVal   = (arr) => Array.isArray(arr) && arr.length >= 2 ? parseFloat(arr[1].value || 0) : null
+  const econData = {
+    gdp:        { value: latestVal(gdpRaw),     prev: prevVal(gdpRaw),     label: 'GDP Growth', unit: '%' },
+    cpi:        { value: latestVal(cpiRaw),     prev: prevVal(cpiRaw),     label: 'CPI Inflation', unit: '%' },
+    unemploy:   { value: latestVal(unemployRaw),prev: prevVal(unemployRaw),label: 'Unemployment', unit: '%' },
+  }
+
+  return { events, sectorData, yieldCurve, econData }
 }
 
 /* ══════════════════════════════════════════
@@ -399,7 +500,7 @@ export async function fetchFMPRecentInsider() {
     price:  t.price || 0,
     value:  (t.securitiesTransacted || 0) * (t.price || 0),
     date:   t.transactionDate || t.filingDate || '?',
-    isBuy:  true,
+    isBuy:  (t.acquistionOrDisposition || t.acquisitionOrDisposition || '').toUpperCase() === 'A',
   }))
 }
 
@@ -438,26 +539,114 @@ export function computeClusterSignal(insiderData) {
 /* ══════════════════════════════════════════
    LITE + FULL FETCHERS
 ══════════════════════════════════════════ */
+
+export async function fetchPriceTarget(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/price-target?symbol=${ticker}`, 3600000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r) return null
+    return {
+      target:    r.priceTarget || r.targetPrice || null,
+      consensus: r.targetConsensus || null,
+      high:      r.targetHigh || null,
+      low:       r.targetLow || null,
+      analysts:  r.numberOfAnalysts || null,
+    }
+  } catch { return null }
+}
+
+export async function fetchAnalystEstimates(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/analyst-estimates?symbol=${ticker}&period=quarter&limit=4`, 300000)
+    if (!Array.isArray(d) || !d.length) return null
+    return d.map(q => ({
+      date:        q.date,
+      epsAvg:      q.estimatedEpsAverage,
+      epsHigh:     q.estimatedEpsHigh,
+      epsLow:      q.estimatedEpsLow,
+      revAvg:      q.estimatedRevenueAverage,
+      numAnalysts: q.numberAnalystEstimatedEps,
+    }))
+  } catch { return null }
+}
+
+export async function fetchUpgradesDowngrades(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/upgrades-downgrades?symbol=${ticker}&limit=10`, 3600000)
+    if (!Array.isArray(d) || !d.length) return null
+    return d.map(u => ({
+      date:      u.publishedDate?.split('T')[0],
+      company:   u.gradingCompany,
+      action:    u.action, // upgrade | downgrade | initiated | reiterated
+      fromGrade: u.previousGrade,
+      toGrade:   u.newGrade,
+    }))
+  } catch { return null }
+}
+
+export async function fetchMACD(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    // EMA 12 and EMA 26 — MACD = EMA12 - EMA26
+    const [ema12, ema26] = await Promise.all([
+      fmp(`/technical-indicator/daily?symbol=${ticker}&type=ema&period=12&limit=3`, 300000),
+      fmp(`/technical-indicator/daily?symbol=${ticker}&type=ema&period=26&limit=3`, 300000),
+    ])
+    if (!Array.isArray(ema12) || !Array.isArray(ema26) || !ema12.length || !ema26.length) return null
+    // MACD line = EMA12 - EMA26 (current and previous)
+    const macdCurrent  = (ema12[0]?.ema || 0) - (ema26[0]?.ema || 0)
+    const macdPrevious = (ema12[1]?.ema || 0) - (ema26[1]?.ema || 0)
+    const bullishCross = macdPrevious <= 0 && macdCurrent > 0   // crossed above zero
+    const bearishCross = macdPrevious >= 0 && macdCurrent < 0   // crossed below zero
+    const trend        = macdCurrent > 0 ? 'bullish' : 'bearish'
+    return {
+      macd:         parseFloat(macdCurrent.toFixed(4)),
+      macdPrev:     parseFloat(macdPrevious.toFixed(4)),
+      bullishCross,
+      bearishCross,
+      trend,
+      ema12:  parseFloat((ema12[0]?.ema || 0).toFixed(2)),
+      ema26:  parseFloat((ema26[0]?.ema || 0).toFixed(2)),
+    }
+  } catch { return null }
+}
+
+export async function fetchPeers(ticker) {
+  if (!hasKeys().fmp) return []
+  try {
+    const d = await fmp(`/stock-peers?symbol=${ticker}`, 3600000)
+    const peers = Array.isArray(d) ? d[0]?.peersList || d : []
+    return peers.slice(0, 4).filter(p => p !== ticker)  // top 4, exclude self
+  } catch { return [] }
+}
+
 export async function fetchTickerLite(ticker) {
   try {
-    const [quote, candles, metrics] = await Promise.all([
-      fetchQuote(ticker), fetchCandles(ticker, 150), fetchMetrics(ticker)
+    const [quote, candles, metrics, rec, earnings, news, priceTarget, upgrades] = await Promise.all([
+      fetchQuote(ticker), fetchCandles(ticker, 260), fetchMetrics(ticker),
+      fetchRec(ticker), fetchEarnings(ticker), fetchNews(ticker, 5),
+      fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker)
     ])
     if (!quote) return null
-    return { ticker, quote, candles, metrics: metrics || {}, news: [], rec: {}, earnings: [] }
+    return { ticker, quote, candles, metrics: metrics || {}, news: news || [], rec: rec || {}, earnings: earnings || [], priceTarget: priceTarget || null, upgrades: upgrades || [] }
   } catch { return null }
 }
 
 export async function fetchTickerFull(ticker) {
   try {
-    const [quote, candles, metrics, news, rec, earnings, profile] = await Promise.all([
-      fetchQuote(ticker), fetchCandles(ticker, 120), fetchMetrics(ticker),
-      fetchNews(ticker, 7), fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker)
+    const [quote, candles, metrics, news, rec, earnings, profile, priceTarget, upgrades] = await Promise.all([
+      fetchQuote(ticker), fetchCandles(ticker, 260), fetchMetrics(ticker),
+      fetchNews(ticker, 7), fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
+      fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker)
     ])
     if (!quote) return null
     return {
       ticker, quote, candles, metrics: metrics || {}, news: news || [], rec: rec || {},
       earnings: earnings || [], name: profile?.name || ticker,
+      priceTarget: priceTarget || null, upgrades: upgrades || [],
       sector: profile?.finnhubIndustry || '', mcap: profile?.marketCapitalization
     }
   } catch { return null }
@@ -482,15 +671,19 @@ export function useTickerData() {
         setError(`No data found for "${ticker}". Check the ticker is a valid US stock or ETF.`)
         return
       }
-      const [candles, metrics, news, rec, earnings, profile, insider, ec] = await Promise.all([
+      const [candles, metrics, news, rec, earnings, profile, insider, ec, priceTarget, upgrades, macd, peers] = await Promise.all([
         fetchCandles(ticker), fetchMetrics(ticker), fetchNews(ticker),
         fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
-        fetchInsider(ticker), fetchEarningsCalendar(ticker)
+        fetchFMPInsider(ticker), fetchEarningsCalendar(ticker),
+        fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker),
+        fetchMACD(ticker), fetchPeers(ticker)
       ])
       setData({
         ticker, quote, candles, metrics: metrics || {}, news: news || [],
         rec: rec || {}, earnings: earnings || [], profile: profile || {},
-        insider: insider || [], ec
+        insider: insider || [], ec,
+        priceTarget: priceTarget || null, upgrades: upgrades || [],
+        macd: macd || null, peers: peers || []
       })
     } catch { setError('Network error — check your connection and try again.') }
     finally  { setLoading(false) }

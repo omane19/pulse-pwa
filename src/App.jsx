@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { marketStatus } from './utils/scoring.js'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import DeepDive from './components/DeepDive.jsx'
 import Watchlist from './components/Watchlist.jsx'
 import Screener from './components/Screener.jsx'
@@ -9,6 +10,7 @@ import Compare from './components/Compare.jsx'
 import Learn from './components/Learn.jsx'
 import Setup from './components/Setup.jsx'
 import SmartMoney from './components/SmartMoney.jsx'
+import TrackRecord from './components/TrackRecord.jsx'
 import Onboarding from './components/Onboarding.jsx'
 
 /* ── Icons ── */
@@ -40,6 +42,9 @@ function IconSetup({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>)
 }
 
+function IconTrack({ active }) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>)
+}
 function checkOnboarded() {
   try { return localStorage.getItem('pulse_onboarded') === '1' } catch { return false }
 }
@@ -56,6 +61,7 @@ const TABS = [
   { id:'compare', label:'VS',      icon:IconCompare },
   { id:'global',  label:'Global',  icon:IconGlobal },
   { id:'learn',   label:'Learn',   icon:IconLearn },
+  { id:'track',   label:'Track',   icon:IconTrack },
   { id:'setup',   label:'Setup',   icon:IconSetup },
 ]
 
@@ -63,7 +69,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dive')
   const [diveQuery, setDiveQuery] = useState('')
   const [showOnboarding, setShowOnboarding] = useState(() => !checkOnboarded())
-  const mkt = useMemo(() => marketStatus(), [])
+  const [mkt, setMkt] = useState(() => marketStatus())
+  useEffect(() => {
+    // Refresh market status every minute
+    const id = setInterval(() => setMkt(marketStatus()), 60000)
+    return () => clearInterval(id)
+  }, [])
 
   const navigateToDive = (ticker) => { setDiveQuery(ticker); setActiveTab('dive') }
   const doneOnboarding = () => { markOnboarded(); setShowOnboarding(false) }
@@ -88,7 +99,7 @@ export default function App() {
       </header>
 
       <main className="page-area">
-        {activeTab === 'dive'    && <DeepDive initialTicker={diveQuery} />}
+        {activeTab === 'dive'    && <DeepDive initialTicker={diveQuery} onNavigate={navigateToDive} />}
         {activeTab === 'watch'   && <Watchlist onNavigateToDive={navigateToDive} />}
         {activeTab === 'screen'  && <Screener onNavigateToDive={navigateToDive} />}
         {activeTab === 'options' && <Options />}
@@ -96,6 +107,7 @@ export default function App() {
         {activeTab === 'compare' && <Compare />}
         {activeTab === 'global'  && <GlobalImpact onNavigate={navigateToDive} />}
         {activeTab === 'learn'   && <Learn />}
+        {activeTab === 'track'   && <TrackRecord />}
         {activeTab === 'setup'   && <Setup onDone={() => setActiveTab('dive')} />}
       </main>
 

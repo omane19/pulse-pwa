@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // Base path: '/' for local dev, '/pulse-pwa/' for GitHub Pages
 // Change 'pulse-pwa' to match your actual GitHub repo name
-const base = '/'
+const base = process.env.GITHUB_ACTIONS ? '/pulse-pwa/' : '/'
 
 export default defineConfig({
   base,
@@ -36,6 +36,15 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/financialmodelingprep\.com\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'fmp-cache',
+              expiration: { maxAgeSeconds: 300 },   // 5 min — matches in-memory TTL
+              networkTimeoutSeconds: 10,
+            }
+          },
           {
             urlPattern: /^https:\/\/finnhub\.io\/api/,
             handler: 'NetworkFirst',

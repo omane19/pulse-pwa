@@ -170,7 +170,7 @@ export default function Screener({ onNavigateToDive }) {
           const batchResults = await Promise.all(batch.map(s => fetchTickerLite(s.ticker)))
           for (const data of batchResults) {
             if (!data) continue
-            const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
+            const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, {})
             const cat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker)) || toScore.find(s => s.ticker === data.ticker)?.sector || 'Market'
             out.push({ ...data, result, category: cat })
           }
@@ -193,7 +193,7 @@ export default function Screener({ onNavigateToDive }) {
       const batchResults = await Promise.all(batch.map(fetchTickerLite))
       for (const data of batchResults) {
         if (!data) continue
-        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
+        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, {})
         const cat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker)) || 'Custom'
         out.push({ ...data, result, category: cat })
       }

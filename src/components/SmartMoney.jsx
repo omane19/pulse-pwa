@@ -94,8 +94,10 @@ export default function SmartMoney() {
     if (!hasFmp) return
     setLoadingFeed(true)
     const [cong, ins] = await Promise.all([fetchFMPRecentCongress(), fetchFMPRecentInsider()])
-    setCongressFeed(cong)
-    setInsiderFeed(ins)
+    // Sort by date descending (most recent first)
+    const sortByDate = arr => [...arr].sort((a, b) => new Date(b.date) - new Date(a.date))
+    setCongressFeed(sortByDate(cong))
+    setInsiderFeed(sortByDate(ins))
     setLoadingFeed(false)
   }, [hasFmp])
 

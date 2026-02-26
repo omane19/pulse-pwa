@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
-import { saveSignal, getTickerHistory } from '../hooks/useSignalHistory.js'
+import { trackSignal } from '../hooks/useSignalLog.js'
 import Chart from './Chart.jsx'
 import { VerdictPill, FactorBars, MetricCell, NewsCard, EarningsWarning, LoadingBar, SectionHeader, Toast, PullToRefresh } from './shared.jsx'
 
@@ -17,8 +17,8 @@ function getFlags(news, scoredNews, insider, quote) {
   if (t4 >= 4) flags.push({ title:'⚠ Unverified Source Concentration',
     body:`${t4}/${scoredNews.length} articles from unverified sources — pattern seen in pump campaigns. Verify with Reuters or WSJ.` })
   const avgRaw = (scoredNews||[]).reduce((s,n)=>s+n.score,0)/Math.max(scoredNews?.length||1,1)
-  const insSells = (insider||[]).filter(x=>(x.change||0)<0).length
-  const insBuys  = (insider||[]).filter(x=>(x.change||0)>0).length
+  const insSells = (insider||[]).filter(x => x.isBuy === false).length
+  const insBuys  = (insider||[]).filter(x => x.isBuy === true).length
   if (avgRaw > 0.2 && insSells > insBuys+2)
     flags.push({ title:'⚠ Bullish News / Insider Selling Divergence',
       body:'Positive news coverage while insiders net selling — classic distribution pattern. Investigate.' })
@@ -199,8 +199,8 @@ function AnalystHistory({ rec, price, avTarget }) {
 /* ── Analysis Brief ───────────────────────────────────────────── */
 function AnalysisBrief({ ticker, company, sector, price, result, ma50, metrics, news, rec, earn, insider }) {
   const S=result.scores; const mom=result.mom; const pe=result.pe
-  const nb=(insider||[]).filter(x=>(x.change||0)>0).length
-  const ns=(insider||[]).filter(x=>(x.change||0)<0).length
+  const nb=(insider||[]).filter(x => x.isBuy === true).length
+  const ns=(insider||[]).filter(x => x.isBuy === false).length
   const insSig = nb>ns?'bullish — executives buying with own money':ns>nb?'bearish — insiders net sellers':'neutral'
   let earnTxt=''; let recTxt=''
   if (earn?.length) {
@@ -341,7 +341,6 @@ function VerdictCard({ result }) {
 function SignalHistorySection({ ticker, currentPrice }) {
   if (!ticker) return null
   let history = []
-  try { history = getTickerHistory(ticker) } catch {}
   if (!history.length) return null
   const GREEN = '#00C805'; const RED = '#FF5000'; const GOLD = '#FFD700'; const G4 = '#252525'
   return (
@@ -375,7 +374,7 @@ function SignalHistorySection({ ticker, currentPrice }) {
 }
 
 /* ── Main ─────────────────────────────────────────────────────── */
-export default function DeepDive({ initialTicker }) {
+export default function DeepDive({ initialTicker, onNavigate }) {
   const [input,  setInput]  = useState(initialTicker || 'AAPL')
   const [ticker, setTicker] = useState('')
   const {data, loading, error, fetch} = useTickerData()
@@ -383,29 +382,36 @@ export default function DeepDive({ initialTicker }) {
   const [result,      setResult]      = useState(null)
   const [toast,       setToast]       = useState(null)
   const [smartMoney,  setSmartMoney]  = useState(null)
+  const [tracked,     setTracked]     = useState(false)
 
   useEffect(() => {
     if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
   }, [initialTicker])
 
+  useEffect(() => { setTracked(false) }, [ticker])
+
   // Re-score whenever base data or smart money updates
   useEffect(() => {
     if (!data) return
-    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, smartMoney || undefined)
+    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, smartMoney || undefined, { priceTarget: data.priceTarget, upgrades: data.upgrades || [], macd: data.macd || null })
     setResult(r)
-    saveSignal({ ticker: data.ticker, score: r.pct, verdict: r.verdict, price: data.quote?.c })
   }, [data, smartMoney])
 
   // Fetch FMP smart money in background
   useEffect(() => {
     if (!data?.ticker || !hasKeys().fmp) return
     setSmartMoney(null)
-    Promise.all([fetchFMPCongressional(data.ticker), fetchFMPInsider(data.ticker)])
-      .then(([cong, ins]) => {
-        const recentInsiderBuys = ins.filter(t => t.isBuy && new Date(t.date) > new Date(Date.now() - 90*86400000)).length
-        const recentCongBuys    = cong.filter(t => t.isBuy).length
+    Promise.all([
+      fetchFMPCongressional(data.ticker), fetchFMPInsider(data.ticker),
+      fetchAnalystEstimates(data.ticker)
+    ]).then(([cong, ins, est]) => {
+        const cutoff = new Date(Date.now() - 90*86400000)
+        const recentInsiderBuys  = ins.filter(t => t.isBuy  && new Date(t.date) > cutoff).length
+        const recentInsiderSells = ins.filter(t => !t.isBuy && new Date(t.date) > cutoff).length
+        const recentCongBuys     = cong.filter(t => t.isBuy).length
         const cluster = computeClusterSignal(ins)
-        setSmartMoney({ insiderBuys: recentInsiderBuys, congressBuys: recentCongBuys, cluster, rawInsider: ins, rawCongress: cong })
+        setSmartMoney({ insiderBuys: recentInsiderBuys, insiderSells: recentInsiderSells, congressBuys: recentCongBuys, cluster, rawInsider: ins, rawCongress: cong })
+        if (est?.length) setAnalystEst(est)
       })
       .catch(() => {})
   }, [data?.ticker])
@@ -413,6 +419,20 @@ export default function DeepDive({ initialTicker }) {
   const handleAnalyze=()=>{ const t=input.trim().toUpperCase(); if(!t)return; setTicker(t); fetch(t) }
   const handleRefresh = useCallback(async () => { if(ticker) { await fetch(ticker) } }, [ticker, fetch])
   const handleWL=()=>{ if(has(ticker)){remove(ticker);setToast(`Removed ${ticker}`)}else{add(ticker);setToast(`Added ${ticker} to watchlist`)} }
+
+  const handleTrack = useCallback(async () => {
+    if (!result || !data?.quote?.c) return
+    await trackSignal({
+      ticker:  data.ticker,
+      verdict: result.verdict,
+      score:   result.pct,
+      price:   data.quote.c,
+      factors: result.scores,
+      reasons: result.reasons,
+    })
+    setTracked(true)
+    setToast(`📊 ${data.ticker} tracked — check Track Record tab`)
+  }, [result, data])
 
   const q=data?.quote; const price=q?.c; const chg=q?.dp||0
   const mt=data?.metrics||{}; const av=mt._av||{}; const ma50=data?.candles?.ma50
@@ -459,9 +479,14 @@ export default function DeepDive({ initialTicker }) {
           <EarningsWarning ec={data.ec}/>
           {q?.source==='alphavantage'&&<div className="datasource-badge ds-av" style={{display:'inline-flex',marginBottom:8}}>⚡ Quote via Alpha Vantage fallback</div>}
           <div style={{display:'flex',justifyContent:'flex-end',marginBottom:4}}>
-            <button className={`btn ${inWL?'btn-danger':'btn-ghost'}`} style={{width:'auto',padding:'7px 14px',fontSize:'0.74rem'}} onClick={handleWL}>
-              {inWL?'− Watchlist':'+ Watchlist'}
-            </button>
+            <div style={{display:'flex',gap:6}}>
+              <button className={`btn ${tracked?'btn-ghost':'btn-secondary'}`} style={{width:'auto',padding:'7px 14px',fontSize:'0.74rem',opacity:tracked?0.5:1}} onClick={handleTrack} disabled={tracked}>
+                {tracked?'✓ Tracked':'📊 Track Call'}
+              </button>
+              <button className={`btn ${inWL?'btn-danger':'btn-ghost'}`} style={{width:'auto',padding:'7px 14px',fontSize:'0.74rem'}} onClick={handleWL}>
+                {inWL?'− Watchlist':'+ Watchlist'}
+              </button>
+            </div>
           </div>
 
           <div className="price-hero">
@@ -473,6 +498,12 @@ export default function DeepDive({ initialTicker }) {
             <div className="price-big" style={{color}}>${price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
             <div className={`price-change ${chg>=0?'pos':'neg'}`}>{chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}% today</div>
             {av.description&&<div className="price-desc">{av.description.slice(0,200)}{av.description.length>200?'…':''}</div>}
+            {result?.upside != null && (
+              <div style={{marginTop:6, fontFamily:'var(--font-mono)', fontSize:'0.72rem', color: result.upside > 0 ? '#00C805' : '#FF5000'}}>
+                Analyst target: {result.upside > 0 ? '▲' : '▼'} {Math.abs(result.upside)}% {result.upside > 0 ? 'upside' : 'downside'}
+                {data?.priceTarget?.analysts ? ` · ${data.priceTarget.analysts} analysts` : ''}
+              </div>
+            )}
           </div>
 
           <VerdictCard result={result}/>
@@ -495,10 +526,22 @@ export default function DeepDive({ initialTicker }) {
           <div className="metrics-grid">
             <MetricCell label="Price"     value={`$${price?.toFixed(2)}`}  delta={`${chg>=0?'+':''}${chg?.toFixed(2)}%`}   deltaColor={chg>=0?'pos':'neg'}/>
             <MetricCell label="50-Day MA" value={ma50?`$${ma50}`:'N/A'}    delta={ma50?(price>ma50?'▲ Above':'▼ Below'):''} deltaColor={ma50?(price>ma50?'pos':'neg'):'neu'}/>
+            <MetricCell label="200-Day MA" value={data.candles?.ma200?`$${data.candles.ma200}`:'N/A'} delta={data.candles?.ma200?(price>data.candles.ma200?'▲ Above':'▼ Below'):''} deltaColor={data.candles?.ma200?(price>data.candles.ma200?'pos':'neg'):'neu'}/>
+            <MetricCell label="52W High"  value={data.quote?.yearHigh?`$${data.quote.yearHigh}`:'N/A'} delta={data.quote?.yearHigh?`${((price/data.quote.yearHigh-1)*100).toFixed(1)}%`:''} deltaColor={data.quote?.yearHigh&&price>=data.quote.yearHigh*0.95?'pos':'neu'}/>
+            <MetricCell label="52W Low"   value={data.quote?.yearLow?`$${data.quote.yearLow}`:'N/A'}  delta={data.quote?.yearLow?`+${((price/data.quote.yearLow-1)*100).toFixed(1)}%`:''} deltaColor='neu'/>
             <MetricCell label="RSI-14"    value={result.mom?.rsi??'N/A'}/>
+            <MetricCell label="MACD"      value={data.macd?`${data.macd.macd>0?'+':''}${data.macd.macd.toFixed(3)}`:'N/A'} delta={data.macd?.bullishCross?'↑ Cross':data.macd?.bearishCross?'↓ Cross':data.macd?.trend||''} deltaColor={data.macd?.bullishCross?'pos':data.macd?.bearishCross?'neg':data.macd?.trend==='bullish'?'pos':'neg'}/>
             <MetricCell label="P/E (TTM)" value={result.pe?`${result.pe.toFixed(1)}×`:'N/A'}/>
-            <MetricCell label="Mkt Cap"   value={fmtMcap(data.profile?.marketCapitalization)}/>
+            <MetricCell label="PEG Ratio"  value={data.metrics?.pegRatio?`${data.metrics.pegRatio.toFixed(2)}×`:'N/A'} delta={data.metrics?.pegRatio?(data.metrics.pegRatio<1?'✓ Good':''):''} deltaColor='pos'/>
+            <MetricCell label="FCF/Share"  value={data.metrics?.fcfPerShare!=null?`$${data.metrics.fcfPerShare}`:'N/A'} deltaColor={data.metrics?.fcfPerShare>0?'pos':'neg'}/>
+            <MetricCell label="Div Yield"  value={data.metrics?.divYield?`${data.metrics.divYield.toFixed(1)}%`:'N/A'} deltaColor={data.metrics?.divYield>3?'pos':'neu'}/>
+            <MetricCell label="Debt/Eq"    value={data.metrics?.debtToEquity!=null?`${data.metrics.debtToEquity.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.debtToEquity!=null?(data.metrics.debtToEquity<1?'pos':data.metrics.debtToEquity>2?'neg':'neu'):'neu'}/>
+            <MetricCell label="Curr Ratio" value={data.metrics?.currentRatio!=null?`${data.metrics.currentRatio.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.currentRatio!=null?(data.metrics.currentRatio>=1.5?'pos':data.metrics.currentRatio<1?'neg':'neu'):'neu'}/>
+            <MetricCell label="Net Cash"   value={data.metrics?.netCash!=null?`${data.metrics.netCash>0?'+':''}$${Math.abs(data.metrics.netCash).toFixed(1)}B`:'N/A'} deltaColor={data.metrics?.netCash!=null?(data.metrics.netCash>0?'pos':'neg'):'neu'}/>
+            <MetricCell label="Rev Growth" value={data.metrics?.revenueGrowthYoY!=null?`${data.metrics.revenueGrowthYoY>0?'+':''}${data.metrics.revenueGrowthYoY}%`:'N/A'} deltaColor={data.metrics?.revenueGrowthYoY>0?'pos':'neg'}/>
+            <MetricCell label="Mkt Cap"   value={fmtMcap(data.metrics?.marketCap||data.profile?.marketCapitalization)}/>
             <MetricCell label="1-Month"   value={result.mom?.['1m']!=null?`${result.mom['1m']>0?'+':''}${result.mom['1m']}%`:'N/A'} deltaColor={result.mom?.['1m']>=0?'pos':'neg'}/>
+            <MetricCell label="3-Month"   value={result.mom?.['3m']!=null?`${result.mom['3m']>0?'+':''}${result.mom['3m']}%`:'N/A'} deltaColor={result.mom?.['3m']>=0?'pos':'neg'}/>
           </div>
 
           {(av.forwardPE||av.targetPrice)&&(
@@ -517,6 +560,27 @@ export default function DeepDive({ initialTicker }) {
           <AnalystHistory rec={data.rec} price={price} avTarget={av.targetPrice} />
 
           {data.earnings?.length>0&&(
+            {analystEst?.length > 0 && (
+              <><SectionHeader>Analyst Forward Estimates</SectionHeader>
+              <div className="card" style={{padding:'12px 16px',marginBottom:8}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  {analystEst.slice(0,2).map((e,i)=>(
+                    <div key={i} style={{background:'rgba(255,255,255,0.03)',borderRadius:8,padding:'10px 12px'}}>
+                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#B2B2B2',marginBottom:4}}>
+                        {e.date ? new Date(e.date).toLocaleDateString('en-US',{month:'short',year:'2-digit'}) : `Q${i+1}`} Est
+                      </div>
+                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.78rem',color:'#00E5FF'}}>
+                        EPS ${e.epsAvg?.toFixed(2) ?? '—'}
+                      </div>
+                      <div style={{fontSize:'0.62rem',color:'#888',marginTop:2}}>
+                        {e.numAnalysts ? `${e.numAnalysts} analysts` : ''}
+                        {e.epsHigh && e.epsLow ? ` · $${e.epsLow?.toFixed(2)}–$${e.epsHigh?.toFixed(2)}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div></>
+            )}
             <><SectionHeader>Earnings History</SectionHeader>
             {data.earnings.slice(0,4).map((eq,i)=>{
               const surp=eq.actual&&eq.estimate?((eq.actual-eq.estimate)/Math.abs(eq.estimate)*100):null
@@ -539,9 +603,13 @@ export default function DeepDive({ initialTicker }) {
           {data.insider?.length>0&&(
             <><SectionHeader>Insider Transactions — 90 Days</SectionHeader>
             <div className="metrics-grid">
-              {[['Buys',String(data.insider.filter(x=>(x.change||0)>0).length)],
-                ['Sells',String(data.insider.filter(x=>(x.change||0)<0).length)],
-                ['Signal',data.insider.filter(x=>(x.change||0)>0).length>data.insider.filter(x=>(x.change||0)<0).length?'🟢 Bullish':data.insider.filter(x=>(x.change||0)<0).length>data.insider.filter(x=>(x.change||0)>0).length?'🔴 Bearish':'⚪ Neutral']
+              {[['Buys',  String(data.insider.filter(x => x.isBuy === true).length)],
+                ['Sells', String(data.insider.filter(x => x.isBuy === false).length)],
+                ['Signal', (() => {
+                  const buys  = data.insider.filter(x => x.isBuy === true).length
+                  const sells = data.insider.filter(x => x.isBuy === false).length
+                  return buys > sells ? '🟢 Bullish' : sells > buys ? '🔴 Bearish' : '⚪ Neutral'
+                })()]
               ].map(([l,v])=><MetricCell key={l} label={l} value={v}/>)}
             </div></>
           )}
@@ -554,6 +622,29 @@ export default function DeepDive({ initialTicker }) {
                 <div style={{fontSize:'0.82rem',color:'#B2B2B2'}}>{f.body}</div>
               </div>
             ))}</>
+          )}
+
+          {data.peers?.length > 0 && (
+            <><SectionHeader>Compare with Peers</SectionHeader>
+            <div className="card" style={{padding:'12px 16px'}}>
+              <div style={{fontSize:'0.72rem', color:'#888', marginBottom:10, fontFamily:'var(--font-mono)'}}>
+                FMP peer group · tap to compare in Dive
+              </div>
+              <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                {data.peers.map(peer => (
+                  <button key={peer}
+                    onClick={() => onNavigate && onNavigate(peer)}
+                    style={{
+                      background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)',
+                      borderRadius:8, padding:'6px 14px', color:'#00E5FF',
+                      fontFamily:'var(--font-mono)', fontSize:'0.72rem', cursor:'pointer',
+                      letterSpacing:0.5
+                    }}>
+                    {peer} →
+                  </button>
+                ))}
+              </div>
+            </div></>
           )}
 
           <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>

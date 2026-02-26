@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { fetchTickerLite } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
@@ -7,7 +7,7 @@ import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh } from './shar
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
-function ScoreBadge({ pct, verdict }) {
+function ScoreBadge({ pct, verdict, fcf, peg }) {
   const color = verdict === 'BUY' ? GREEN : verdict === 'HOLD' ? YELLOW : RED
   return (
     <div style={{
@@ -35,6 +35,11 @@ export default function Watchlist({ onNavigateToDive }) {
     add(t); setInput(''); setToast(`Added ${t}`)
   }
 
+  // Auto-refresh on mount if watchlist has items
+  useEffect(() => {
+    if (list.length > 0) handleRefresh()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleRefresh = useCallback(async () => {
     if (!list.length) return
     setLoading(true); setProgress(0); setResults([])
@@ -46,7 +51,7 @@ export default function Watchlist({ onNavigateToDive }) {
       const batchResults = await Promise.all(batch.map(fetchTickerLite))
       for (const data of batchResults) {
         if (!data) continue
-        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
+        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, { priceTarget: data.priceTarget, upgrades: data.upgrades || [] })
         out.push({ ...data, result })
       }
       setProgress(Math.round(Math.min(i + BATCH, list.length) / list.length * 100))
@@ -55,7 +60,6 @@ export default function Watchlist({ onNavigateToDive }) {
     setLoading(false)
   }, [list])
 
-  const { pull, ready, containerRef } = {}
 
   return (
     <PullToRefresh onRefresh={handleRefresh} enabled={list.length > 0}>
@@ -126,9 +130,16 @@ export default function Watchlist({ onNavigateToDive }) {
                   <div style={{ fontFamily:'var(--font-mono)', fontWeight:700, fontSize:'0.82rem', color:'#fff' }}>{item.ticker}</div>
                   <div style={{ fontSize:'0.68rem', color:G1, marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{name}</div>
                   {hasResult && (
-                    <div style={{ marginTop:4 }}>
-                      <SignalBar pct={r.pct} color={r.color} height={3} />
-                    </div>
+                    <>
+                      <div style={{ marginTop:4 }}>
+                        <SignalBar pct={r.pct} color={r.color} height={3} />
+                      </div>
+                      <div style={{ display:'flex', gap:8, marginTop:3 }}>
+                        {item.metrics?.pegRatio != null && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#888' }}>PEG {item.metrics.pegRatio.toFixed(2)}</span>}
+                        {item.metrics?.fcfPerShare != null && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color: item.metrics.fcfPerShare > 0 ? '#00C805' : '#FF5000' }}>FCF ${item.metrics.fcfPerShare}</span>}
+                        {item.metrics?.revenueGrowthYoY != null && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color: item.metrics.revenueGrowthYoY > 0 ? '#00C805' : '#FF5000' }}>{item.metrics.revenueGrowthYoY > 0 ? '+' : ''}{item.metrics.revenueGrowthYoY}% rev</span>}
+                      </div>
+                    </>
                   )}
                 </div>
 
