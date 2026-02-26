@@ -110,7 +110,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   }
   // 52-week high/low proximity
   const yearHigh = quote?.yearHigh; const yearLow = quote?.yearLow
-  const currentPrice = quote?.c
+  //const currentPrice = quote?.c
   if (currentPrice && yearHigh && yearLow) {
     const pctFromHigh = (currentPrice - yearHigh) / yearHigh * 100
     const pctFromLow  = (currentPrice - yearLow)  / yearLow  * 100
