@@ -200,7 +200,7 @@ export async function fetchMetrics(ticker) {
         revenueGrowthYoY = parseFloat(((inc[0].revenue - inc[1].revenue) / Math.abs(inc[1].revenue) * 100).toFixed(1))
       }
       // FCF per share
-      const sharesOutstanding = p.sharesOutstanding || cf?.weightedAverageShsOut || null
+      const sharesOutstanding = p.sharesOutstanding || cf?.weightedAverageShsOut || (p.mktCap && p.price ? p.mktCap / p.price : null)
       const fcf = cf?.freeCashFlow || 
         (cf?.operatingCashFlow && cf?.capitalExpenditure 
           ? cf.operatingCashFlow - Math.abs(cf.capitalExpenditure) 
@@ -224,7 +224,7 @@ export async function fetchMetrics(ticker) {
       // Dividend yield — use ratios TTM first, fallback to lastDiv/price
       const divYield = r?.dividendYieldTTM
         ? parseFloat((r.dividendYieldTTM * 100).toFixed(2))
-        : (p.lastDiv && p.price ? parseFloat((p.lastDiv / p.price * 100).toFixed(2)) : null)
+        : ((p.lastDividend || p.lastDiv) && p.price ? parseFloat(((p.lastDividend || p.lastDiv) / p.price * 100).toFixed(2)) : null)
       return {
         peTTM:           r?.priceToEarningsRatioTTM || null,
         pbAnnual:        r?.priceToBookRatioTTM || null,
