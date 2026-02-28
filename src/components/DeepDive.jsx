@@ -383,6 +383,7 @@ export default function DeepDive({ initialTicker, onNavigate }) {
   const [toast,       setToast]       = useState(null)
   const [smartMoney,  setSmartMoney]  = useState(null)
   const [tracked,     setTracked]     = useState(false)
+  const [analystEst,  setAnalystEst]  = useState([])
 
   useEffect(() => {
     if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
@@ -559,28 +560,29 @@ export default function DeepDive({ initialTicker, onNavigate }) {
 
           <AnalystHistory rec={data.rec} price={price} avTarget={av.targetPrice} />
 
-          {data.earnings?.length>0&&(
-            {analystEst?.length > 0 && (
-              <><SectionHeader>Analyst Forward Estimates</SectionHeader>
-              <div className="card" style={{padding:'12px 16px',marginBottom:8}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                  {analystEst.slice(0,2).map((e,i)=>(
-                    <div key={i} style={{background:'rgba(255,255,255,0.03)',borderRadius:8,padding:'10px 12px'}}>
-                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#B2B2B2',marginBottom:4}}>
-                        {e.date ? new Date(e.date).toLocaleDateString('en-US',{month:'short',year:'2-digit'}) : `Q${i+1}`} Est
-                      </div>
-                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.78rem',color:'#00E5FF'}}>
-                        EPS ${e.epsAvg?.toFixed(2) ?? '—'}
-                      </div>
-                      <div style={{fontSize:'0.62rem',color:'#888',marginTop:2}}>
-                        {e.numAnalysts ? `${e.numAnalysts} analysts` : ''}
-                        {e.epsHigh && e.epsLow ? ` · $${e.epsLow?.toFixed(2)}–$${e.epsHigh?.toFixed(2)}` : ''}
-                      </div>
+          {analystEst?.length > 0 && (
+            <><SectionHeader>Analyst Forward Estimates</SectionHeader>
+            <div className="card" style={{padding:'12px 16px',marginBottom:8}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                {analystEst.slice(0,2).map((e,i)=>(
+                  <div key={i} style={{background:'rgba(255,255,255,0.03)',borderRadius:8,padding:'10px 12px'}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#B2B2B2',marginBottom:4}}>
+                      {e.date ? new Date(e.date).toLocaleDateString('en-US',{month:'short',year:'2-digit'}) : `Q${i+1}`} Est
                     </div>
-                  ))}
-                </div>
-              </div></>
-            )}
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.78rem',color:'#00E5FF'}}>
+                      EPS ${e.epsAvg?.toFixed(2) ?? '—'}
+                    </div>
+                    <div style={{fontSize:'0.62rem',color:'#888',marginTop:2}}>
+                      {e.numAnalysts ? `${e.numAnalysts} analysts` : ''}
+                      {e.epsHigh && e.epsLow ? ` · $${e.epsLow?.toFixed(2)}–$${e.epsHigh?.toFixed(2)}` : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div></>
+          )}
+
+          {data.earnings?.length>0&&(
             <><SectionHeader>Earnings History</SectionHeader>
             {data.earnings.slice(0,4).map((eq,i)=>{
               const surp=eq.actual&&eq.estimate?((eq.actual-eq.estimate)/Math.abs(eq.estimate)*100):null

@@ -5,7 +5,7 @@ import { TICKER_NAMES } from '../utils/constants.js'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { VerdictPill, FactorBars, LoadingBar , PullToRefresh } from './shared.jsx'
 
-const GREEN='#00C805'; const RED='#FF5000'; const CYAN='#00E5FF'
+const GREEN='#00C805'; const RED='#FF5000'; const CYAN='#00E5FF'; const YELLOW='#FFD700'
 const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
 async function loadOne(ticker) {
