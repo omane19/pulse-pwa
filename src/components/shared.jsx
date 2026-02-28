@@ -1,9 +1,8 @@
 import { usePullToRefresh } from '../hooks/usePullToRefresh.js'
 import React, { useState } from 'react'
-//import { timeAgo, getTier } from '../utils/scoring.js'
+import { timeAgo, getTier } from '../utils/scoring.js'
 import { SOURCE_TIERS } from '../utils/constants.js'
-//import { smartSummary } from '../utils/scoring.js'
-import { timeAgo, getTier, smartSummary } from '../utils/textUtils.js'
+import { smartSummary } from '../utils/scoring.js'
 
 export function VerdictPill({ verdict }) {
   const cls = verdict === 'BUY' ? 'vp-buy' : verdict === 'HOLD' ? 'vp-hold' : 'vp-avoid'

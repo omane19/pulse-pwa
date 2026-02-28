@@ -1,5 +1,4 @@
 import { SOURCE_TIERS } from './constants.js'
-import { getTier } from './textUtils.js'
 
 // ── Simple sentiment (AFINN-style word list, no external lib) ────
 const POS_WORDS = new Set(["beat","beats","surge","surged","soar","soared","rally","rallied","profit","profits","gain","gains","growth","grew","strong","record","upgrade","upgraded","buy","outperform","raised","raise","exceeds","exceeded","positive","bullish","recovery","recovered","expand","expanding","revenue","solid","robust","better","improved","improvement","boost","boosted","higher","rise","rose","increase","increased","top","topped","above","ahead"])
@@ -16,7 +15,14 @@ export function simpleSentiment(text) {
   return count > 0 ? Math.max(-1, Math.min(1, score / Math.max(count, 3))) : 0
 }
 
-
+export function getTier(source) {
+  const src = (source || '').toLowerCase()
+  for (const [tier, info] of Object.entries(SOURCE_TIERS)) {
+    if (parseInt(tier) === 4) continue
+    if (info.sources && info.sources.some(s => src.includes(s.toLowerCase()))) return parseInt(tier)
+  }
+  return 4
+}
 
 export function credibilitySentiment(news) {
   if (!news || news.length === 0) return [0, []]
@@ -104,10 +110,9 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   }
   // 52-week high/low proximity
   const yearHigh = quote?.yearHigh; const yearLow = quote?.yearLow
-  //const currentPrice = quote?.c
-  if (currentPrice && yearHigh && yearLow) {
-    const pctFromHigh = (currentPrice - yearHigh) / yearHigh * 100
-    const pctFromLow  = (currentPrice - yearLow)  / yearLow  * 100
+  if (quote?.c && yearHigh && yearLow) {
+    const pctFromHigh = (quote.c - yearHigh) / yearHigh * 100
+    const pctFromLow  = (quote.c - yearLow)  / yearLow  * 100
     if (pctFromHigh >= -5)  { ms += 0.2; mr.push(`Near 52-week high — price strength`) }
     else if (pctFromHigh >= -15) { ms += 0.05; mr.push(`Within 15% of 52-week high`) }
     if (pctFromLow <= 10) { ms -= 0.15; mr.push(`Near 52-week low — price weakness`) }
@@ -399,7 +404,19 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     contradictions, inBearRegime }
 }
 
-
+export function smartSummary(title, body) {
+  const text = (body || '').trim()
+  if (text.length < 60) return null
+  const sents = text.split(/(?<=[.!?])\s+/).filter(s => s.length >= 50 && s.length <= 250)
+  if (!sents.length) return null
+  const kws = ['revenue','profit','earnings','growth','beat','miss','raised','lowered','expects','guidance','acquisition','deal','billion','million','percent','%','quarter','fiscal','rose','fell','surged','dropped','shares','dividend','buyback','forecast','upgraded','downgraded']
+  const best = sents.reduce((best, s) => {
+    const sl = s.toLowerCase()
+    const sc = kws.filter(k => sl.includes(k)).length * 2 + (s.length > 80 && s.length < 200 ? 1 : 0)
+    return sc > best.score ? { s, score: sc } : best
+  }, { s: sents[0], score: 0 }).s
+  return best.length > 200 ? best.slice(0, 200).replace(/\s\S+$/, '') + '…' : best
+}
 
 export function marketStatus() {
   const now = new Date()
@@ -411,7 +428,17 @@ export function marketStatus() {
   return { open: false, label: 'After-Hours', detail: 'Closed · Pre-market 4 AM ET' }
 }
 
-
+export function timeAgo(ts) {
+  if (!ts) return { label: '?', badge: 'old' }
+  const secs = (Date.now() - ts * 1000) / 1000
+  const mins = Math.floor(secs / 60); const hrs = Math.floor(secs / 3600); const days = Math.floor(secs / 86400)
+  if (secs < 60)  return { label: 'just now', badge: 'live' }
+  if (mins < 10)  return { label: `${mins}m`, badge: 'breaking' }
+  if (mins < 60)  return { label: `${mins}m ago`, badge: 'new' }
+  if (hrs < 24)   return { label: `${hrs}h ago`, badge: hrs < 6 ? 'new' : 'today' }
+  if (days === 1) return { label: 'Yesterday', badge: 'today' }
+  return { label: `${days}d ago`, badge: 'old' }
+}
 
 export function fmtMcap(m) {
   if (!m) return 'N/A'

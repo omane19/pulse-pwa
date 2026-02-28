@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { marketStatus } from './utils/scoring.js'
-import ErrorBoundary from './components/ErrorBoundary.jsx'
 import DeepDive from './components/DeepDive.jsx'
 import Watchlist from './components/Watchlist.jsx'
 import Screener from './components/Screener.jsx'
