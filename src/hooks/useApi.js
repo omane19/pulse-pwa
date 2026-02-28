@@ -108,6 +108,7 @@ export async function fetchQuote(ticker) {
         d: q.change || 0, dp: q.changePercentage || q.changesPercentage || 0,
         h: q.dayHigh || q.price, l: q.dayLow || q.price,
         v: q.volume || 0, mc: q.marketCap || 0,
+        yearHigh: q.yearHigh || null, yearLow: q.yearLow || null,
         source: 'fmp'
       }
     }
@@ -200,7 +201,10 @@ export async function fetchMetrics(ticker) {
       }
       // FCF per share
       const sharesOutstanding = p.sharesOutstanding || cf?.weightedAverageShsOut || null
-      const fcf = cf?.freeCashFlow || null
+      const fcf = cf?.freeCashFlow || 
+        (cf?.operatingCashFlow && cf?.capitalExpenditure 
+          ? cf.operatingCashFlow - Math.abs(cf.capitalExpenditure) 
+          : null)
       const fcfPerShare = (fcf && sharesOutstanding && sharesOutstanding > 0)
         ? parseFloat((fcf / sharesOutstanding).toFixed(2)) : null
       // PEG = P/E / earnings growth rate
@@ -217,8 +221,10 @@ export async function fetchMetrics(ticker) {
         ? parseFloat((totalCurrentAssets / totalCurrentLiab).toFixed(2)) : null
       const netCash          = (cashAndEquiv != null && totalDebt != null)
         ? parseFloat(((cashAndEquiv - totalDebt) / 1e9).toFixed(2)) : null  // in billions
-      // Dividend yield (annual div / price)
-      const divYield = p.lastDiv && p.price ? parseFloat((p.lastDiv / p.price * 100).toFixed(2)) : null
+      // Dividend yield — use ratios TTM first, fallback to lastDiv/price
+      const divYield = r?.dividendYieldTTM
+        ? parseFloat((r.dividendYieldTTM * 100).toFixed(2))
+        : (p.lastDiv && p.price ? parseFloat((p.lastDiv / p.price * 100).toFixed(2)) : null)
       return {
         peTTM:           r?.priceToEarningsRatioTTM || null,
         pbAnnual:        r?.priceToBookRatioTTM || null,
@@ -587,31 +593,39 @@ export async function fetchUpgradesDowngrades(ticker) {
   } catch { return null }
 }
 
-export async function fetchMACD(ticker) {
-  if (!hasKeys().fmp) return null
-  try {
-    // EMA 12 and EMA 26 — MACD = EMA12 - EMA26
-    const [ema12, ema26] = await Promise.all([
-      fmp(`/technical-indicator/daily?symbol=${ticker}&type=ema&period=12&limit=3`, 300000),
-      fmp(`/technical-indicator/daily?symbol=${ticker}&type=ema&period=26&limit=3`, 300000),
-    ])
-    if (!Array.isArray(ema12) || !Array.isArray(ema26) || !ema12.length || !ema26.length) return null
-    // MACD line = EMA12 - EMA26 (current and previous)
-    const macdCurrent  = (ema12[0]?.ema || 0) - (ema26[0]?.ema || 0)
-    const macdPrevious = (ema12[1]?.ema || 0) - (ema26[1]?.ema || 0)
-    const bullishCross = macdPrevious <= 0 && macdCurrent > 0   // crossed above zero
-    const bearishCross = macdPrevious >= 0 && macdCurrent < 0   // crossed below zero
-    const trend        = macdCurrent > 0 ? 'bullish' : 'bearish'
-    return {
-      macd:         parseFloat(macdCurrent.toFixed(4)),
-      macdPrev:     parseFloat(macdPrevious.toFixed(4)),
-      bullishCross,
-      bearishCross,
-      trend,
-      ema12:  parseFloat((ema12[0]?.ema || 0).toFixed(2)),
-      ema26:  parseFloat((ema26[0]?.ema || 0).toFixed(2)),
+// Calculate MACD from closes array (no extra API call needed)
+export function calcMACD(closes) {
+  if (!closes || closes.length < 30) return null
+  function ema(arr, period) {
+    const k = 2 / (period + 1)
+    let val = arr.slice(0, period).reduce((a, b) => a + b, 0) / period
+    const result = [val]
+    for (let i = period; i < arr.length; i++) {
+      val = arr[i] * k + val * (1 - k)
+      result.push(val)
     }
-  } catch { return null }
+    return result
+  }
+  const ema12arr = ema(closes, 12)
+  const ema26arr = ema(closes, 26)
+  // Align arrays (ema26 is shorter by 14)
+  const diff = ema12arr.length - ema26arr.length
+  const macdLine = ema26arr.map((v, i) => ema12arr[i + diff] - v)
+  const cur  = macdLine[macdLine.length - 1]
+  const prev = macdLine[macdLine.length - 2]
+  return {
+    macd:         parseFloat(cur.toFixed(4)),
+    macdPrev:     parseFloat(prev.toFixed(4)),
+    bullishCross: prev <= 0 && cur > 0,
+    bearishCross: prev >= 0 && cur < 0,
+    trend:        cur > 0 ? 'bullish' : 'bearish',
+    ema12:        parseFloat(ema12arr[ema12arr.length - 1].toFixed(2)),
+    ema26:        parseFloat(ema26arr[ema26arr.length - 1].toFixed(2)),
+  }
+}
+
+export async function fetchMACD(ticker) {
+  return null // computed from candles in useTickerData instead
 }
 
 export async function fetchPeers(ticker) {
@@ -672,13 +686,15 @@ export function useTickerData() {
         setError(`No data found for "${ticker}". Check the ticker is a valid US stock or ETF.`)
         return
       }
-      const [candles, metrics, news, rec, earnings, profile, insider, ec, priceTarget, upgrades, macd, peers] = await Promise.all([
+      const [candles, metrics, news, rec, earnings, profile, insider, ec, priceTarget, upgrades, peers] = await Promise.all([
         fetchCandles(ticker), fetchMetrics(ticker), fetchNews(ticker),
         fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
         fetchFMPInsider(ticker), fetchEarningsCalendar(ticker),
         fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker),
-        fetchMACD(ticker), fetchPeers(ticker)
+        fetchPeers(ticker)
       ])
+      // Compute MACD locally from candles — no extra API call
+      const macd = candles?.closes ? calcMACD(candles.closes) : null
       setData({
         ticker, quote, candles, metrics: metrics || {}, news: news || [],
         rec: rec || {}, earnings: earnings || [], profile: profile || {},

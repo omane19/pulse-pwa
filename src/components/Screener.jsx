@@ -151,6 +151,7 @@ export default function Screener({ onNavigateToDive }) {
     const out = []
 
     // FMP bulk mode — if FMP key available, pre-filter from 500+ tickers
+    // Note: /company-screener may not be available on all FMP plans — falls through to curated list if empty
     if (k.fmp && selCats.length > 0 && customTickers.length === 0) {
       setProgressTicker('FMP bulk fetch…')
       const bulk = await fetchFMPScreener({ minMcap: 500, limit: 500 })
