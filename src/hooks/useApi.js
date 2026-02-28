@@ -225,6 +225,18 @@ export async function fetchMetrics(ticker) {
       const divYield = r?.dividendYieldTTM
         ? parseFloat((r.dividendYieldTTM * 100).toFixed(2))
         : ((p.lastDividend || p.lastDiv) && p.price ? parseFloat(((p.lastDividend || p.lastDiv) / p.price * 100).toFixed(2)) : null)
+      // Extract additional ratios from ratios-ttm
+      const evEbitda       = r?.enterpriseValueMultipleTTM || null
+      const priceToFCF     = r?.priceToFreeCashFlowsRatioTTM || null
+      const roic           = r?.returnOnCapitalEmployedTTM ? r.returnOnCapitalEmployedTTM * 100 : null
+      const incomeQuality  = r?.incomeQualityTTM || null
+      const quickRatio     = r?.quickRatioTTM || null
+      const cashRatio      = r?.cashRatioTTM || null
+      const grossMargin    = r?.grossProfitMarginTTM ? r.grossProfitMarginTTM * 100 : null
+      const operatingMargin = r?.operatingProfitMarginTTM ? r.operatingProfitMarginTTM * 100 : null
+      const netMargin      = r?.netProfitMarginTTM ? r.netProfitMarginTTM * 100 : null
+      const assetTurnover  = r?.assetTurnoverTTM || null
+
       return {
         peTTM:           r?.priceToEarningsRatioTTM || null,
         pbAnnual:        r?.priceToBookRatioTTM || null,
@@ -238,6 +250,16 @@ export async function fetchMetrics(ticker) {
         currentRatio,
         netCash,
         divYield,
+        evEbitda,
+        priceToFCF,
+        roic,
+        incomeQuality,
+        quickRatio,
+        cashRatio,
+        grossMargin,
+        operatingMargin,
+        netMargin,
+        assetTurnover,
         _fmp: {
           sector:       p.sector || null,
           description:  p.description || null,
@@ -667,6 +689,188 @@ export async function fetchTickerFull(ticker) {
   } catch { return null }
 }
 
+
+/* ══════════════════════════════════════════
+   PIOTROSKI + ALTMAN Z SCORE
+══════════════════════════════════════════ */
+export async function fetchScore(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/score?symbol=${ticker}`, 3600000)
+    const s = Array.isArray(d) ? d[0] : d
+    if (!s) return null
+    return {
+      piotroski:  s.piotroskiScore ?? null,
+      altmanZ:    s.altmanZScore ?? null,
+      piotroskiLabel: s.piotroskiScore >= 7 ? 'Strong' : s.piotroskiScore >= 4 ? 'Neutral' : 'Weak',
+      altmanLabel:    s.altmanZScore >= 3 ? 'Safe' : s.altmanZScore >= 1.8 ? 'Grey Zone' : 'Distress',
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   FMP COMPANY RATING (S+ to D)
+══════════════════════════════════════════ */
+export async function fetchRating(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/rating?symbol=${ticker}`, 3600000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r) return null
+    return {
+      rating:            r.rating || null,
+      ratingScore:       r.ratingScore ?? null,
+      ratingRecommendation: r.ratingRecommendation || null,
+      dcfScore:          r.ratingDetailsDCFScore ?? null,
+      roeScore:          r.ratingDetailsROEScore ?? null,
+      roaScore:          r.ratingDetailsROAScore ?? null,
+      deScore:           r.ratingDetailsDEScore ?? null,
+      peScore:           r.ratingDetailsPEScore ?? null,
+      pbScore:           r.ratingDetailsPBScore ?? null,
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   DCF INTRINSIC VALUE
+══════════════════════════════════════════ */
+export async function fetchDCF(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/discounted-cash-flow?symbol=${ticker}`, 3600000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r?.dcf) return null
+    return {
+      dcf:          parseFloat(r.dcf.toFixed(2)),
+      price:        parseFloat((r.stockPrice || r.price || 0).toFixed(2)),
+      upside:       r.stockPrice ? parseFloat(((r.dcf - r.stockPrice) / r.stockPrice * 100).toFixed(1)) : null,
+      date:         r.date || null,
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   SHARES FLOAT (short interest, float shares)
+══════════════════════════════════════════ */
+export async function fetchSharesFloat(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/shares-float?symbol=${ticker}`, 3600000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r) return null
+    return {
+      floatShares:      r.floatShares || null,
+      outstandingShares: r.outstandingShares || null,
+      freeFloat:        r.freeFloat || null,  // percentage
+      source:           r.date || null,
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   STOCK PRICE CHANGE (multi-period returns)
+══════════════════════════════════════════ */
+export async function fetchPriceChange(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/stock-price-change?symbol=${ticker}`, 300000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r) return null
+    return {
+      '1D':  r['1D']  ?? null,
+      '5D':  r['5D']  ?? null,
+      '1M':  r['1M']  ?? null,
+      '3M':  r['3M']  ?? null,
+      '6M':  r['6M']  ?? null,
+      '1Y':  r['1Y']  ?? null,
+      '3Y':  r['3Y']  ?? null,
+      '5Y':  r['5Y']  ?? null,
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   KEY EXECUTIVES
+══════════════════════════════════════════ */
+export async function fetchExecutives(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/key-executives?symbol=${ticker}`, 86400000)
+    if (!Array.isArray(d) || !d.length) return null
+    return d.slice(0, 5).map(e => ({
+      name:         e.name || '',
+      title:        e.title || '',
+      pay:          e.pay || null,
+      gender:       e.gender || null,
+      yearBorn:     e.yearBorn || null,
+    }))
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   OWNER EARNINGS (Buffett-style)
+══════════════════════════════════════════ */
+export async function fetchOwnerEarnings(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/owner-earnings?symbol=${ticker}`, 3600000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r) return null
+    return {
+      ownerEarnings:        r.ownerEarnings || null,
+      averageInvestment:    r.averageInvestment || null,
+      ownerEarningsPerShare: r.ownerEarningsPerShare || null,
+      growthCapex:          r.growthCapex || null,
+      maintenanceCapex:     r.maintenanceCapex || null,
+      date:                 r.date || null,
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   ESG SCORES
+══════════════════════════════════════════ */
+export async function fetchESG(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/esg-disclosures?symbol=${ticker}`, 86400000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r) return null
+    return {
+      esgScore:        r.ESGScore ?? r.esgScore ?? null,
+      environmentScore: r.environmentalScore ?? r.environmentScore ?? null,
+      socialScore:     r.socialScore ?? null,
+      governanceScore: r.governanceScore ?? null,
+      rating:          r.ESGRating ?? r.esgRating ?? null,
+      year:            r.year || null,
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   EARNINGS TRANSCRIPT (latest summary)
+══════════════════════════════════════════ */
+export async function fetchEarningsTranscript(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    // Get list first to find latest
+    const list = await fmp(`/earnings-transcript-list?symbol=${ticker}`, 86400000)
+    if (!Array.isArray(list) || !list.length) return null
+    const latest = list[0]
+    const d = await fmp(`/earnings-transcript?symbol=${ticker}&year=${latest.year}&quarter=${latest.quarter}`, 86400000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r?.content) return null
+    // Extract first 1500 chars as summary (opening remarks)
+    const content = r.content.slice(0, 1500)
+    return {
+      quarter: latest.quarter,
+      year:    latest.year,
+      date:    r.date || latest.date || null,
+      summary: content + (r.content.length > 1500 ? '…' : ''),
+    }
+  } catch { return null }
+}
+
 /* ── React hook ── */
 export function useTickerData() {
   const [data,    setData]    = useState(null)
@@ -686,12 +890,17 @@ export function useTickerData() {
         setError(`No data found for "${ticker}". Check the ticker is a valid US stock or ETF.`)
         return
       }
-      const [candles, metrics, news, rec, earnings, profile, insider, ec, priceTarget, upgrades, peers] = await Promise.all([
+      const [candles, metrics, news, rec, earnings, profile, insider, ec,
+             priceTarget, upgrades, peers, score, rating, dcf, sharesFloat,
+             priceChange, executives, ownerEarnings, esg, transcript] = await Promise.all([
         fetchCandles(ticker), fetchMetrics(ticker), fetchNews(ticker),
         fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
         fetchFMPInsider(ticker), fetchEarningsCalendar(ticker),
         fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker),
-        fetchPeers(ticker)
+        fetchPeers(ticker), fetchScore(ticker), fetchRating(ticker),
+        fetchDCF(ticker), fetchSharesFloat(ticker), fetchPriceChange(ticker),
+        fetchExecutives(ticker), fetchOwnerEarnings(ticker),
+        fetchESG(ticker), fetchEarningsTranscript(ticker)
       ])
       // Compute MACD locally from candles — no extra API call
       const macd = candles?.closes ? calcMACD(candles.closes) : null
@@ -700,7 +909,12 @@ export function useTickerData() {
         rec: rec || {}, earnings: earnings || [], profile: profile || {},
         insider: insider || [], ec,
         priceTarget: priceTarget || null, upgrades: upgrades || [],
-        macd: macd || null, peers: peers || []
+        macd: macd || null, peers: peers || [],
+        score: score || null, rating: rating || null,
+        dcf: dcf || null, sharesFloat: sharesFloat || null,
+        priceChange: priceChange || null, executives: executives || null,
+        ownerEarnings: ownerEarnings || null, esg: esg || null,
+        transcript: transcript || null
       })
     } catch { setError('Network error — check your connection and try again.') }
     finally  { setLoading(false) }

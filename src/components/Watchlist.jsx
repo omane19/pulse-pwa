@@ -1,22 +1,26 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { useWatchlist } from '../hooks/useWatchlist.js'
-import { fetchTickerLite } from '../hooks/useApi.js'
+import { fetchTickerLite, fetchScore, fetchRating } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh } from './shared.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
-function ScoreBadge({ pct, verdict, fcf, peg }) {
+function ScoreBadge({ pct, verdict, fmpRating, piotroski }) {
   const color = verdict === 'BUY' ? GREEN : verdict === 'HOLD' ? YELLOW : RED
   return (
-    <div style={{
-      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-      width:48, height:48, borderRadius:12,
-      background:`${color}12`, border:`1.5px solid ${color}40`, flexShrink:0
-    }}>
-      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.9rem', fontWeight:700, color, lineHeight:1 }}>{Math.round(pct)}</div>
-      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.48rem', color, letterSpacing:1, marginTop:2 }}>{verdict}</div>
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,flexShrink:0}}>
+      <div style={{
+        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        width:48, height:48, borderRadius:12,
+        background:`${color}12`, border:`1.5px solid ${color}40`
+      }}>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.9rem', fontWeight:700, color, lineHeight:1 }}>{Math.round(pct)}</div>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.48rem', color, letterSpacing:1, marginTop:2 }}>{verdict}</div>
+      </div>
+      {fmpRating && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',padding:'1px 5px',borderRadius:3,background:'rgba(0,229,255,0.1)',color:'#00E5FF'}}>{fmpRating}</div>}
+      {piotroski!=null && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',padding:'1px 5px',borderRadius:3,background:piotroski>=7?'rgba(0,200,5,0.15)':piotroski>=4?'rgba(255,215,0,0.1)':'rgba(255,80,0,0.1)',color:piotroski>=7?GREEN:piotroski>=4?YELLOW:RED}}>P:{piotroski}</div>}
     </div>
   )
 }
@@ -52,6 +56,9 @@ export default function Watchlist({ onNavigateToDive }) {
       for (const data of batchResults) {
         if (!data) continue
         const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, { priceTarget: data.priceTarget, upgrades: data.upgrades || [] })
+        // Attach score/rating to result for badge display
+        result.fmpRating = data.rating?.rating || null
+        result.piotroski = data.score?.piotroski ?? null
         out.push({ ...data, result })
       }
       setProgress(Math.round(Math.min(i + BATCH, list.length) / list.length * 100))
@@ -123,7 +130,7 @@ export default function Watchlist({ onNavigateToDive }) {
                 }}>
 
                 {/* Score badge — shown after scoring */}
-                {hasResult && <ScoreBadge pct={r.pct} verdict={r.verdict} />}
+                {hasResult && <ScoreBadge pct={r.pct} verdict={r.verdict} fmpRating={item.result?.fmpRating} piotroski={item.result?.piotroski} />}
 
                 {/* Ticker + name */}
                 <div style={{ flex:1, minWidth:0 }}>

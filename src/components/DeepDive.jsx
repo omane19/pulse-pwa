@@ -541,8 +541,20 @@ export default function DeepDive({ initialTicker, onNavigate }) {
             <MetricCell label="Net Cash"   value={data.metrics?.netCash!=null?`${data.metrics.netCash>0?'+':''}$${Math.abs(data.metrics.netCash).toFixed(1)}B`:'N/A'} deltaColor={data.metrics?.netCash!=null?(data.metrics.netCash>0?'pos':'neg'):'neu'}/>
             <MetricCell label="Rev Growth" value={data.metrics?.revenueGrowthYoY!=null?`${data.metrics.revenueGrowthYoY>0?'+':''}${data.metrics.revenueGrowthYoY}%`:'N/A'} deltaColor={data.metrics?.revenueGrowthYoY>0?'pos':'neg'}/>
             <MetricCell label="Mkt Cap"   value={fmtMcap(data.metrics?.marketCap||data.profile?.marketCapitalization)}/>
-            <MetricCell label="1-Month"   value={result.mom?.['1m']!=null?`${result.mom['1m']>0?'+':''}${result.mom['1m']}%`:'N/A'} deltaColor={result.mom?.['1m']>=0?'pos':'neg'}/>
-            <MetricCell label="3-Month"   value={result.mom?.['3m']!=null?`${result.mom['3m']>0?'+':''}${result.mom['3m']}%`:'N/A'} deltaColor={result.mom?.['3m']>=0?'pos':'neg'}/>
+            <MetricCell label="1-Month"   value={data.priceChange?.['1M']!=null?`${data.priceChange['1M']>0?'+':''}${data.priceChange['1M'].toFixed(2)}%`:result.mom?.['1m']!=null?`${result.mom['1m']>0?'+':''}${result.mom['1m']}%`:'N/A'} deltaColor={(data.priceChange?.['1M']??result.mom?.['1m'])>=0?'pos':'neg'}/>
+            <MetricCell label="3-Month"   value={data.priceChange?.['3M']!=null?`${data.priceChange['3M']>0?'+':''}${data.priceChange['3M'].toFixed(2)}%`:result.mom?.['3m']!=null?`${result.mom['3m']>0?'+':''}${result.mom['3m']}%`:'N/A'} deltaColor={(data.priceChange?.['3M']??result.mom?.['3m'])>=0?'pos':'neg'}/>
+            <MetricCell label="6-Month"   value={data.priceChange?.['6M']!=null?`${data.priceChange['6M']>0?'+':''}${data.priceChange['6M'].toFixed(2)}%`:'N/A'} deltaColor={data.priceChange?.['6M']>=0?'pos':'neg'}/>
+            <MetricCell label="1-Year"    value={data.priceChange?.['1Y']!=null?`${data.priceChange['1Y']>0?'+':''}${data.priceChange['1Y'].toFixed(2)}%`:'N/A'} deltaColor={data.priceChange?.['1Y']>=0?'pos':'neg'}/>
+            <MetricCell label="EV/EBITDA" value={data.metrics?.evEbitda?`${data.metrics.evEbitda.toFixed(1)}×`:'N/A'} deltaColor={data.metrics?.evEbitda<15?'pos':data.metrics?.evEbitda>30?'neg':'neu'}/>
+            <MetricCell label="P/FCF"     value={data.metrics?.priceToFCF?`${data.metrics.priceToFCF.toFixed(1)}×`:'N/A'} deltaColor={data.metrics?.priceToFCF<20?'pos':data.metrics?.priceToFCF>40?'neg':'neu'}/>
+            <MetricCell label="ROIC"      value={data.metrics?.roic!=null?`${data.metrics.roic.toFixed(1)}%`:'N/A'} deltaColor={data.metrics?.roic>15?'pos':data.metrics?.roic<5?'neg':'neu'}/>
+            <MetricCell label="Gross Margin" value={data.metrics?.grossMargin!=null?`${data.metrics.grossMargin.toFixed(1)}%`:'N/A'} deltaColor={data.metrics?.grossMargin>40?'pos':data.metrics?.grossMargin<20?'neg':'neu'}/>
+            <MetricCell label="Op Margin" value={data.metrics?.operatingMargin!=null?`${data.metrics.operatingMargin.toFixed(1)}%`:'N/A'} deltaColor={data.metrics?.operatingMargin>20?'pos':data.metrics?.operatingMargin<5?'neg':'neu'}/>
+            <MetricCell label="Net Margin" value={data.metrics?.netMargin!=null?`${data.metrics.netMargin.toFixed(1)}%`:'N/A'} deltaColor={data.metrics?.netMargin>15?'pos':data.metrics?.netMargin<5?'neg':'neu'}/>
+            <MetricCell label="Quick Ratio" value={data.metrics?.quickRatio!=null?`${data.metrics.quickRatio.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.quickRatio>=1?'pos':data.metrics?.quickRatio<0.5?'neg':'neu'}/>
+            <MetricCell label="Cash Ratio" value={data.metrics?.cashRatio!=null?`${data.metrics.cashRatio.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.cashRatio>=0.5?'pos':'neu'}/>
+            <MetricCell label="Asset Turn" value={data.metrics?.assetTurnover!=null?`${data.metrics.assetTurnover.toFixed(2)}×`:'N/A'}/>
+            <MetricCell label="Short Float" value={data.sharesFloat?.freeFloat!=null?`${data.sharesFloat.freeFloat.toFixed(1)}%`:'N/A'}/>
           </div>
 
           {(av.forwardPE||av.targetPrice)&&(
@@ -557,6 +569,38 @@ export default function DeepDive({ initialTicker, onNavigate }) {
 
           <SectionHeader>6-Factor Breakdown</SectionHeader>
           <div className="card"><FactorBars scores={result.scores}/></div>
+
+          {/* FMP Rating — separate section below verdict */}
+          {data.rating && (
+            <><SectionHeader>FMP Institutional Rating</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:12}}>
+                <div style={{fontFamily:'var(--font-display)',fontSize:'2.4rem',fontWeight:900,
+                  color: data.rating.ratingScore>=25?GREEN:data.rating.ratingScore>=15?YELLOW:RED}}>
+                  {data.rating.rating || '—'}
+                </div>
+                <div>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.78rem',color:'#fff'}}>
+                    {data.rating.ratingRecommendation || '—'}
+                  </div>
+                  <div style={{fontSize:'0.65rem',color:'#888',marginTop:2}}>
+                    Score {data.rating.ratingScore}/30 · Based on DCF, ROE, ROA, D/E, P/E, P/B
+                  </div>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
+                {[['DCF',data.rating.dcfScore],['ROE',data.rating.roeScore],['ROA',data.rating.roaScore],
+                  ['D/E',data.rating.deScore],['P/E',data.rating.peScore],['P/B',data.rating.pbScore]
+                ].map(([l,v])=>v!=null&&(
+                  <div key={l} style={{background:'rgba(255,255,255,0.03)',borderRadius:6,padding:'6px 10px',textAlign:'center'}}>
+                    <div style={{fontSize:'0.6rem',color:'#888',marginBottom:2}}>{l}</div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.8rem',
+                      color:v>=4?GREEN:v>=3?YELLOW:RED}}>{v}/5</div>
+                  </div>
+                ))}
+              </div>
+            </div></>
+          )}
 
           <AnalystHistory rec={data.rec} price={price} avTarget={av.targetPrice} />
 
@@ -646,6 +690,115 @@ export default function DeepDive({ initialTicker, onNavigate }) {
                   </button>
                 ))}
               </div>
+            </div></>
+          )}
+
+          {/* Piotroski + Altman Z */}
+          {data.score && (
+            <><SectionHeader>Fundamental Health</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#888',marginBottom:6}}>PIOTROSKI SCORE</div>
+                  <div style={{fontFamily:'var(--font-display)',fontSize:'2.2rem',fontWeight:900,
+                    color:data.score.piotroski>=7?GREEN:data.score.piotroski>=4?YELLOW:RED}}>
+                    {data.score.piotroski ?? '—'}<span style={{fontSize:'1rem',color:'#888'}}>/9</span>
+                  </div>
+                  <div style={{fontSize:'0.7rem',color:'#888',marginTop:4}}>{data.score.piotroskiLabel}</div>
+                  <div style={{fontSize:'0.62rem',color:'#555',marginTop:2}}>Profitability · Leverage · Efficiency</div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#888',marginBottom:6}}>ALTMAN Z-SCORE</div>
+                  <div style={{fontFamily:'var(--font-display)',fontSize:'2.2rem',fontWeight:900,
+                    color:data.score.altmanZ>=3?GREEN:data.score.altmanZ>=1.8?YELLOW:RED}}>
+                    {data.score.altmanZ?.toFixed(2) ?? '—'}
+                  </div>
+                  <div style={{fontSize:'0.7rem',color:'#888',marginTop:4}}>{data.score.altmanLabel}</div>
+                  <div style={{fontSize:'0.62rem',color:'#555',marginTop:2}}>{'<1.8 Distress · 1.8-3 Grey · >3 Safe'}</div>
+                </div>
+              </div>
+            </div></>
+          )}
+
+          {/* DCF Intrinsic Value */}
+          {data.dcf && (
+            <><SectionHeader>Intrinsic Value (DCF)</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                <div>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#888',marginBottom:4}}>DCF VALUE</div>
+                  <div style={{fontFamily:'var(--font-display)',fontSize:'1.8rem',fontWeight:900,color:CYAN}}>${data.dcf.dcf}</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#888',marginBottom:4}}>VS CURRENT PRICE</div>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'1.1rem',fontWeight:700,
+                    color:data.dcf.upside>0?GREEN:RED}}>
+                    {data.dcf.upside>0?'+':''}{data.dcf.upside?.toFixed(1)}%
+                  </div>
+                  <div style={{fontSize:'0.65rem',color:'#888'}}>{data.dcf.upside>0?'Undervalued':'Overvalued'}</div>
+                </div>
+              </div>
+              <div style={{fontSize:'0.72rem',color:'#B2B2B2'}}>
+                Current price ${data.dcf.price} · DCF ${data.dcf.dcf} · {data.dcf.upside>10?'Significant margin of safety':'Priced near intrinsic value'}
+              </div>
+            </div></>
+          )}
+
+          {/* Owner Earnings */}
+          {data.ownerEarnings && (
+            <><SectionHeader>Owner Earnings (Buffett Method)</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div className="metrics-grid" style={{marginBottom:0}}>
+                {data.ownerEarnings.ownerEarningsPerShare!=null&&<MetricCell label="Owner EPS" value={`$${data.ownerEarnings.ownerEarningsPerShare.toFixed(2)}`} deltaColor={data.ownerEarnings.ownerEarningsPerShare>0?'pos':'neg'}/>}
+                {data.ownerEarnings.ownerEarnings!=null&&<MetricCell label="Owner Earnings" value={`$${(data.ownerEarnings.ownerEarnings/1e9).toFixed(1)}B`} deltaColor={data.ownerEarnings.ownerEarnings>0?'pos':'neg'}/>}
+                {data.ownerEarnings.maintenanceCapex!=null&&<MetricCell label="Maint. Capex" value={`$${(Math.abs(data.ownerEarnings.maintenanceCapex)/1e9).toFixed(1)}B`}/>}
+              </div>
+            </div></>
+          )}
+
+          {/* ESG Scores */}
+          {data.esg && (
+            <><SectionHeader>ESG Scores · {data.esg.year||''}</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                <div style={{fontFamily:'var(--font-display)',fontSize:'1.8rem',fontWeight:900,color:CYAN}}>{data.esg.esgScore?.toFixed(0)??'—'}</div>
+                <div>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:'#fff'}}>{data.esg.rating||'ESG Score'}</div>
+                  <div style={{fontSize:'0.62rem',color:'#888'}}>Overall ESG Rating</div>
+                </div>
+              </div>
+              <div className="metrics-grid" style={{marginBottom:0}}>
+                {data.esg.environmentScore!=null&&<MetricCell label="Environment" value={data.esg.environmentScore.toFixed(0)} deltaColor={data.esg.environmentScore>60?'pos':data.esg.environmentScore<30?'neg':'neu'}/>}
+                {data.esg.socialScore!=null&&<MetricCell label="Social" value={data.esg.socialScore.toFixed(0)} deltaColor={data.esg.socialScore>60?'pos':data.esg.socialScore<30?'neg':'neu'}/>}
+                {data.esg.governanceScore!=null&&<MetricCell label="Governance" value={data.esg.governanceScore.toFixed(0)} deltaColor={data.esg.governanceScore>60?'pos':data.esg.governanceScore<30?'neg':'neu'}/>}
+              </div>
+            </div></>
+          )}
+
+          {/* Key Executives */}
+          {data.executives?.length > 0 && (
+            <><SectionHeader>Key Executives</SectionHeader>
+            <div className="card" style={{padding:'0 16px'}}>
+              {data.executives.map((e,i)=>(
+                <div key={i} style={{padding:'10px 0',borderBottom:i<data.executives.length-1?'1px solid #1a1a1a':'none',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:'0.82rem',color:'#fff'}}>{e.name}</div>
+                    <div style={{fontSize:'0.68rem',color:'#888',marginTop:2}}>{e.title}</div>
+                  </div>
+                  {e.pay&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:CYAN}}>${(e.pay/1e6).toFixed(1)}M</div>}
+                </div>
+              ))}
+            </div></>
+          )}
+
+          {/* Earnings Transcript */}
+          {data.transcript && (
+            <><SectionHeader>Earnings Call · Q{data.transcript.quarter} {data.transcript.year}</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{fontSize:'0.72rem',color:'#888',marginBottom:8,fontFamily:'var(--font-mono)'}}>
+                {data.transcript.date} · Opening remarks summary
+              </div>
+              <div style={{fontSize:'0.8rem',color:'#B2B2B2',lineHeight:1.7}}>{data.transcript.summary}</div>
             </div></>
           )}
 

@@ -10,6 +10,8 @@ const G1='#B2B2B2'; const G4='#252525'; const GREEN='#00C805'; const RED='#FF500
 
 /* ── Rank card ── */
 function RankCard({ item, rank, showCat = true, onNavigate }) {
+  const piotroski = item.score?.piotroski
+  const fmpRating = item.rating?.rating
   const [open, setOpen] = useState(false)
   const r = item.result; const c = r.color
   const price = item.quote?.c; const chg = item.quote?.dp || 0
@@ -22,7 +24,11 @@ function RankCard({ item, rank, showCat = true, onNavigate }) {
       <div className="rank-header">
         <span className="rank-medal">{medal}</span>
         <div style={{ minWidth:0, flex:1 }}>
-          <div className="rank-ticker">{item.ticker}</div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <div className="rank-ticker">{item.ticker}</div>
+            {fmpRating && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',padding:'2px 6px',borderRadius:4,background:'rgba(0,229,255,0.1)',color:'#00E5FF'}}>{fmpRating}</div>}
+            {piotroski!=null && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',padding:'2px 6px',borderRadius:4,background:piotroski>=7?'rgba(0,200,5,0.15)':piotroski>=4?'rgba(255,215,0,0.1)':'rgba(255,80,0,0.1)',color:piotroski>=7?'#00C805':piotroski>=4?'#FFD700':'#FF5000'}}>P:{piotroski}</div>}
+          </div>
           <div className="rank-name">{name.slice(0, 26)}{showCat ? ` · ${item.category}` : ''}</div>
         </div>
         {price && (
