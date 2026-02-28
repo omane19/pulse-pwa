@@ -853,21 +853,179 @@ export async function fetchESG(ticker) {
 export async function fetchEarningsTranscript(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    // Get list first to find latest
     const list = await fmp(`/earnings-transcript-list?symbol=${ticker}`, 86400000)
     if (!Array.isArray(list) || !list.length) return null
     const latest = list[0]
+    if (!latest?.year || !latest?.quarter) return null
     const d = await fmp(`/earnings-transcript?symbol=${ticker}&year=${latest.year}&quarter=${latest.quarter}`, 86400000)
-    const r = Array.isArray(d) ? d[0] : d
-    if (!r?.content) return null
-    // Extract first 1500 chars as summary (opening remarks)
-    const content = r.content.slice(0, 1500)
+    const arr = Array.isArray(d) ? d : (d ? [d] : [])
+    const r = arr[0]
+    if (!r?.content || r.content.length < 100) return null
+    // Find the CEO/CFO opening statement — skip operator intro
+    const content = r.content
+    const openerIdx = content.search(/good (morning|afternoon|evening)|thank you|welcome to|joining us/i)
+    const startIdx = openerIdx > 0 && openerIdx < 500 ? openerIdx : 0
+    const summary = content.slice(startIdx, startIdx + 1800)
     return {
       quarter: latest.quarter,
       year:    latest.year,
       date:    r.date || latest.date || null,
-      summary: content + (r.content.length > 1500 ? '…' : ''),
+      summary: summary + (content.length > startIdx + 1800 ? '…' : ''),
     }
+  } catch { return null }
+}
+
+
+/* ══════════════════════════════════════════
+   KEY METRICS TTM (EV, Revenue/Share etc.)
+══════════════════════════════════════════ */
+export async function fetchKeyMetrics(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/key-metrics-ttm?symbol=${ticker}`, 3600000)
+    const r = Array.isArray(d) ? d[0] : d
+    if (!r) return null
+    return {
+      evTTM:               r.enterpriseValueTTM || null,
+      revenuePerShareTTM:  r.revenuePerShareTTM || null,
+      netIncomePerShareTTM: r.netIncomePerShareTTM || null,
+      operatingCFPerShareTTM: r.operatingCashFlowPerShareTTM || null,
+      fcfPerShareTTM:      r.freeCashFlowPerShareTTM || null,
+      cashPerShareTTM:     r.cashPerShareTTM || null,
+      debtPerShareTTM:     r.debtPerShareTTM || null,
+      peRatioTTM:          r.peRatioTTM || null,
+      pbRatioTTM:          r.pbRatioTTM || null,
+      evEbitdaTTM:         r.evToEBITDATTM || null,
+      evSalesTTM:          r.evToSalesTTM || null,
+      roeTTM:              r.roeTTM ? r.roeTTM * 100 : null,
+      roicTTM:             r.roicTTM ? r.roicTTM * 100 : null,
+      workingCapitalTTM:   r.workingCapitalTTM || null,
+      tangibleBVPerShareTTM: r.tangibleBookValuePerShareTTM || null,
+      dividendYieldTTM:    r.dividendYieldTTM ? r.dividendYieldTTM * 100 : null,
+      payoutRatioTTM:      r.payoutRatioTTM ? r.payoutRatioTTM * 100 : null,
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   INCOME STATEMENT GROWTH
+══════════════════════════════════════════ */
+export async function fetchIncomeGrowth(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/income-statement-growth?symbol=${ticker}&period=annual&limit=3`, 3600000)
+    if (!Array.isArray(d) || !d.length) return null
+    return d.slice(0, 3).map(r => ({
+      date:              r.date || null,
+      revenueGrowth:     r.growthRevenue ? parseFloat((r.growthRevenue * 100).toFixed(1)) : null,
+      netIncomeGrowth:   r.growthNetIncome ? parseFloat((r.growthNetIncome * 100).toFixed(1)) : null,
+      epsGrowth:         r.growthEPS ? parseFloat((r.growthEPS * 100).toFixed(1)) : null,
+      grossProfitGrowth: r.growthGrossProfit ? parseFloat((r.growthGrossProfit * 100).toFixed(1)) : null,
+      ebitdaGrowth:      r.growthEBITDA ? parseFloat((r.growthEBITDA * 100).toFixed(1)) : null,
+    }))
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   CASH FLOW STATEMENT GROWTH
+══════════════════════════════════════════ */
+export async function fetchCashFlowGrowth(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/cash-flow-statement-growth?symbol=${ticker}&period=annual&limit=3`, 3600000)
+    if (!Array.isArray(d) || !d.length) return null
+    return d.slice(0, 3).map(r => ({
+      date:          r.date || null,
+      fcfGrowth:     r.growthFreeCashFlow ? parseFloat((r.growthFreeCashFlow * 100).toFixed(1)) : null,
+      opCFGrowth:    r.growthNetCashProvidedByOperatingActivites ? parseFloat((r.growthNetCashProvidedByOperatingActivites * 100).toFixed(1)) : null,
+      capexGrowth:   r.growthCapitalExpenditure ? parseFloat((r.growthCapitalExpenditure * 100).toFixed(1)) : null,
+    }))
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   BALANCE SHEET GROWTH
+══════════════════════════════════════════ */
+export async function fetchBalanceSheetGrowth(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/balance-sheet-statement-growth?symbol=${ticker}&period=annual&limit=3`, 3600000)
+    if (!Array.isArray(d) || !d.length) return null
+    return d.slice(0, 3).map(r => ({
+      date:           r.date || null,
+      totalAssetsGrowth: r.growthTotalAssets ? parseFloat((r.growthTotalAssets * 100).toFixed(1)) : null,
+      totalDebtGrowth:   r.growthTotalDebt ? parseFloat((r.growthTotalDebt * 100).toFixed(1)) : null,
+      cashGrowth:        r.growthCashAndCashEquivalents ? parseFloat((r.growthCashAndCashEquivalents * 100).toFixed(1)) : null,
+      equityGrowth:      r.growthTotalStockholdersEquity ? parseFloat((r.growthTotalStockholdersEquity * 100).toFixed(1)) : null,
+    }))
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   REVENUE PRODUCT SEGMENTATION
+══════════════════════════════════════════ */
+export async function fetchRevenueSegments(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/revenue-product-segmentation?symbol=${ticker}&period=annual`, 3600000)
+    if (!Array.isArray(d) || !d.length) return null
+    // Latest year's segments
+    const latest = d[0]
+    if (!latest) return null
+    // FMP returns { date: "2024-09-28", segments: { iPhone: 1234, Services: 567, ... } }
+    const segments = latest.segments || latest
+    if (typeof segments !== 'object') return null
+    const entries = Object.entries(segments)
+      .filter(([k]) => k !== 'date' && k !== 'symbol')
+      .sort((a, b) => b[1] - a[1])
+    const total = entries.reduce((s, [, v]) => s + v, 0)
+    return {
+      date:     latest.date || null,
+      segments: entries.map(([name, value]) => ({
+        name,
+        value,
+        pct: total > 0 ? parseFloat((value / total * 100).toFixed(1)) : null
+      }))
+    }
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   DIVIDEND HISTORY
+══════════════════════════════════════════ */
+export async function fetchDividends(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/dividends?symbol=${ticker}&limit=8`, 3600000)
+    if (!Array.isArray(d) || !d.length) return null
+    return d.slice(0, 8).map(r => ({
+      date:          r.date || r.paymentDate || null,
+      dividend:      r.dividend || r.adjDividend || null,
+      declarationDate: r.declarationDate || null,
+      recordDate:    r.recordDate || null,
+      paymentDate:   r.paymentDate || null,
+    }))
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   MARKET MOVERS (biggest gainers/losers)
+══════════════════════════════════════════ */
+export async function fetchMarketMovers() {
+  if (!hasKeys().fmp) return null
+  try {
+    const [gainers, losers] = await Promise.all([
+      fmp(`/biggest-gainers`, 180000),
+      fmp(`/biggest-losers`, 180000),
+    ])
+    const mapMovers = arr => Array.isArray(arr) ? arr.slice(0, 10).map(r => ({
+      ticker:  r.symbol || r.ticker,
+      name:    r.name || r.companyName || '',
+      price:   r.price || null,
+      change:  r.change || null,
+      changePct: r.changesPercentage || r.changePercentage || null,
+    })) : []
+    return { gainers: mapMovers(gainers), losers: mapMovers(losers) }
   } catch { return null }
 }
 
@@ -892,7 +1050,8 @@ export function useTickerData() {
       }
       const [candles, metrics, news, rec, earnings, profile, insider, ec,
              priceTarget, upgrades, peers, score, rating, dcf, sharesFloat,
-             priceChange, executives, ownerEarnings, esg, transcript] = await Promise.all([
+             priceChange, executives, ownerEarnings, esg, transcript,
+             keyMetrics, incomeGrowth, cfGrowth, bsGrowth, revenueSegments, dividends] = await Promise.all([
         fetchCandles(ticker), fetchMetrics(ticker), fetchNews(ticker),
         fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
         fetchFMPInsider(ticker), fetchEarningsCalendar(ticker),
@@ -900,7 +1059,10 @@ export function useTickerData() {
         fetchPeers(ticker), fetchScore(ticker), fetchRating(ticker),
         fetchDCF(ticker), fetchSharesFloat(ticker), fetchPriceChange(ticker),
         fetchExecutives(ticker), fetchOwnerEarnings(ticker),
-        fetchESG(ticker), fetchEarningsTranscript(ticker)
+        fetchESG(ticker), fetchEarningsTranscript(ticker),
+        fetchKeyMetrics(ticker), fetchIncomeGrowth(ticker),
+        fetchCashFlowGrowth(ticker), fetchBalanceSheetGrowth(ticker),
+        fetchRevenueSegments(ticker), fetchDividends(ticker)
       ])
       // Compute MACD locally from candles — no extra API call
       const macd = candles?.closes ? calcMACD(candles.closes) : null
@@ -914,7 +1076,10 @@ export function useTickerData() {
         dcf: dcf || null, sharesFloat: sharesFloat || null,
         priceChange: priceChange || null, executives: executives || null,
         ownerEarnings: ownerEarnings || null, esg: esg || null,
-        transcript: transcript || null
+        transcript: transcript || null,
+        keyMetrics: keyMetrics || null, incomeGrowth: incomeGrowth || null,
+        cfGrowth: cfGrowth || null, bsGrowth: bsGrowth || null,
+        revenueSegments: revenueSegments || null, dividends: dividends || null
       })
     } catch { setError('Network error — check your connection and try again.') }
     finally  { setLoading(false) }

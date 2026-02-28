@@ -802,6 +802,80 @@ export default function DeepDive({ initialTicker, onNavigate }) {
             </div></>
           )}
 
+          {/* Revenue Segments */}
+          {data.revenueSegments?.segments?.length > 0 && (
+            <><SectionHeader>Revenue by Product · {data.revenueSegments.date?.slice(0,4)}</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              {data.revenueSegments.segments.map((seg, i) => (
+                <div key={i} style={{marginBottom: i < data.revenueSegments.segments.length - 1 ? 10 : 0}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                    <div style={{fontSize:'0.76rem',color:'#fff'}}>{seg.name}</div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:CYAN}}>
+                      {seg.pct}% · ${(seg.value/1e9).toFixed(1)}B
+                    </div>
+                  </div>
+                  <div style={{height:4,background:'#1a1a1a',borderRadius:2}}>
+                    <div style={{height:'100%',width:`${seg.pct}%`,background:CYAN,borderRadius:2,opacity:0.7}}/>
+                  </div>
+                </div>
+              ))}
+            </div></>
+          )}
+
+          {/* Growth Trends */}
+          {data.incomeGrowth?.length > 0 && (
+            <><SectionHeader>Growth Trends (YoY)</SectionHeader>
+            <div className="card" style={{padding:'14px 16px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'auto repeat(3,1fr)',gap:'6px 10px',alignItems:'center'}}>
+                <div style={{fontSize:'0.6rem',color:'#555'}}></div>
+                {data.incomeGrowth.map((r,i) => (
+                  <div key={i} style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:'#888',textAlign:'center'}}>
+                    {r.date?.slice(0,4)||`Y-${i+1}`}
+                  </div>
+                ))}
+                {[
+                  ['Revenue',     data.incomeGrowth.map(r => r.revenueGrowth)],
+                  ['Net Income',  data.incomeGrowth.map(r => r.netIncomeGrowth)],
+                  ['EPS',         data.incomeGrowth.map(r => r.epsGrowth)],
+                  ['FCF',         data.cfGrowth?.map(r => r.fcfGrowth) || []],
+                  ['Op CF',       data.cfGrowth?.map(r => r.opCFGrowth) || []],
+                ].map(([label, vals]) => (
+                  <React.Fragment key={label}>
+                    <div style={{fontSize:'0.65rem',color:'#888'}}>{label}</div>
+                    {[0,1,2].map(i => {
+                      const v = vals[i]
+                      return (
+                        <div key={i} style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',textAlign:'center',
+                          color: v == null ? '#555' : v > 0 ? GREEN : RED}}>
+                          {v != null ? `${v > 0 ? '+' : ''}${v}%` : '—'}
+                        </div>
+                      )
+                    })}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div></>
+          )}
+
+          {/* Dividend History */}
+          {data.dividends?.length > 0 && (
+            <><SectionHeader>Dividend History</SectionHeader>
+            <div className="card" style={{padding:'0 16px'}}>
+              {data.dividends.map((d, i) => (
+                <div key={i} style={{padding:'10px 0',borderBottom:i<data.dividends.length-1?'1px solid #1a1a1a':'none',
+                  display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:'#fff'}}>{d.date}</div>
+                    {d.paymentDate && <div style={{fontSize:'0.62rem',color:'#888',marginTop:2}}>Paid {d.paymentDate}</div>}
+                  </div>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.82rem',color:GREEN}}>
+                    ${d.dividend?.toFixed(4)}
+                  </div>
+                </div>
+              ))}
+            </div></>
+          )}
+
           <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>
           <div className="card" style={{padding:'0 16px'}}>
             {data.news?.length

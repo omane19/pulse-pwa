@@ -215,12 +215,28 @@ export default function Screener({ onNavigateToDive }) {
   const topNGrouped = useMemo(() => {
     if (mode !== 'topN' || !ran) return null
     const groups = {}
+    // First try grouping by UNIVERSE membership (curated list path)
     for (const cat of selCats) {
       const catResults = results
-        .filter(r => UNIVERSE[cat]?.includes(r.ticker))
+        .filter(r => UNIVERSE[cat]?.includes(r.ticker) || r.category === cat)
         .sort((a, b) => b.result.pct - a.result.pct)
         .slice(0, topN)
       if (catResults.length > 0) groups[cat] = catResults
+    }
+    // If no groups formed (FMP bulk path — tickers not in UNIVERSE)
+    // Fall back to grouping by r.category which was assigned during scan
+    if (Object.keys(groups).length === 0) {
+      for (const r of results) {
+        const cat = r.category || 'Market'
+        if (!groups[cat]) groups[cat] = []
+        groups[cat].push(r)
+      }
+      // Take topN from each group
+      for (const cat of Object.keys(groups)) {
+        groups[cat] = groups[cat]
+          .sort((a, b) => b.result.pct - a.result.pct)
+          .slice(0, topN)
+      }
     }
     if (customTickers.length > 0) {
       const customResults = results.filter(r => customTickers.includes(r.ticker)).slice(0, topN)

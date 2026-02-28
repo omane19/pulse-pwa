@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { fetchQuote, fetchRegionNews, fetchTickerLite } from '../hooks/useApi.js'
+import { fetchQuote, fetchRegionNews, fetchTickerLite, fetchMarketMovers } from '../hooks/useApi.js'
 import { scoreAsset } from '../utils/scoring.js'
 import { PullToRefresh } from './shared.jsx'
 import { GLOBAL_CHAINS, TICKER_NAMES } from '../utils/constants.js'
@@ -102,6 +102,7 @@ export default function GlobalImpact({ onNavigate }) {
   const [prices, setPrices]           = useState({})
   const [loadingPrices, setLoadingPrices] = useState(false)
   const [tickerScores, setTickerScores]   = useState({})
+  const [movers, setMovers]               = useState(null)
 
   const loadPrices = useCallback(async () => {
     setLoadingPrices(true)
@@ -128,7 +129,10 @@ export default function GlobalImpact({ onNavigate }) {
     }
   }, [])
 
-  useEffect(() => { loadPrices() }, [])
+  useEffect(() => {
+    loadPrices()
+    fetchMarketMovers().then(m => { if (m) setMovers(m) })
+  }, [])
 
   return (
     <PullToRefresh onRefresh={loadPrices}>
@@ -139,6 +143,39 @@ export default function GlobalImpact({ onNavigate }) {
           Live news per region. Tap any ticker to analyze in Dive. Tap <b style={{color:'#fff'}}>"Why this matters"</b> for context.
         </div>
       </div>
+
+      {/* Market Movers */}
+      {movers && (movers.gainers?.length > 0 || movers.losers?.length > 0) && (
+        <div className="card" style={{marginBottom:16,padding:'14px 16px'}}>
+          <div style={{fontSize:'0.6rem',fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',color:G1,marginBottom:12}}>📈 Market Movers Today</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <div>
+              <div style={{fontSize:'0.6rem',color:'#00C805',letterSpacing:1,marginBottom:8}}>TOP GAINERS</div>
+              {movers.gainers.slice(0,5).map((s,i) => (
+                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:i<4?'1px solid #1a1a1a':'none'}}>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'#fff',cursor:'pointer'}}
+                    onClick={() => onNavigate && onNavigate(s.ticker)}>{s.ticker}</div>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'#00C805'}}>
+                    +{s.changePct?.toFixed(2)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div style={{fontSize:'0.6rem',color:'#FF5000',letterSpacing:1,marginBottom:8}}>TOP LOSERS</div>
+              {movers.losers.slice(0,5).map((s,i) => (
+                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:i<4?'1px solid #1a1a1a':'none'}}>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'#fff',cursor:'pointer'}}
+                    onClick={() => onNavigate && onNavigate(s.ticker)}>{s.ticker}</div>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'#FF5000'}}>
+                    {s.changePct?.toFixed(2)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {GLOBAL_CHAINS.map((chain, i) => (
         <RegionCard
