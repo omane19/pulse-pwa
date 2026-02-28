@@ -618,8 +618,9 @@ export async function fetchPeers(ticker) {
   if (!hasKeys().fmp) return []
   try {
     const d = await fmp(`/stock-peers?symbol=${ticker}`, 3600000)
-    const peers = Array.isArray(d) ? d[0]?.peersList || d : []
-    return peers.slice(0, 4).filter(p => p !== ticker)  // top 4, exclude self
+    const raw = Array.isArray(d) ? d[0]?.peersList || d : []
+    const peers = raw.map(p => typeof p === 'string' ? p : (p?.symbol || p?.ticker || null)).filter(Boolean)
+    return peers.filter(p => p !== ticker).slice(0, 4)  // top 4, exclude self
   } catch { return [] }
 }
 
