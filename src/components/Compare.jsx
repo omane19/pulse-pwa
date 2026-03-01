@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { fetchQuote, fetchCandles, fetchMetrics, fetchNews, fetchRec, fetchEarnings, fetchProfile } from '../hooks/useApi.js'
+import { fetchQuote, fetchCandles, fetchMetrics, fetchNews, fetchRec, fetchEarnings, fetchProfile, fetchScore, fetchRating, fetchDCF, fetchESG, fetchSharesFloat } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
@@ -9,14 +9,17 @@ const GREEN='#00C805'; const RED='#FF5000'; const CYAN='#00E5FF'; const YELLOW='
 const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
 async function loadOne(ticker) {
-  const [quote, candles, metrics, news, rec, earnings, profile] = await Promise.all([
+  const [quote, candles, metrics, news, rec, earnings, profile, score, rating, dcf, esg, sharesFloat] = await Promise.all([
     fetchQuote(ticker), fetchCandles(ticker,260), fetchMetrics(ticker),
-    fetchNews(ticker,7), fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker)
+    fetchNews(ticker,7), fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
+    fetchScore(ticker), fetchRating(ticker), fetchDCF(ticker), fetchESG(ticker), fetchSharesFloat(ticker)
   ])
   if (!quote) return null
   const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, news||[], rec||{}, earnings||[], undefined, { priceTarget: null, upgrades: [] })
   return { ticker, quote, candles, metrics:metrics||{}, result, profile:profile||{},
-    name: profile?.name || TICKER_NAMES[ticker] || ticker }
+    name: profile?.name || TICKER_NAMES[ticker] || ticker,
+    data: { score, rating, dcf, esg, sharesFloat }
+  }
 }
 
 const CTip = ({ active, payload, label }) => {

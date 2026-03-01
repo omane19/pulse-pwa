@@ -83,6 +83,18 @@ async function fmp(path, ttl = 300000) {
   return data
 }
 
+/* ── FMP v3 (legacy endpoints: score, rating, dcf, transcripts, esg) ── */
+async function fmpv3(path, ttl = 300000) {
+  const key = FMP_KEY()
+  if (!key || key.length < 8) return null
+  const sep = path.includes('?') ? '&' : '?'
+  const url = `https://financialmodelingprep.com/api/v3${path}${sep}apikey=${key}`
+  const hit = cGet(url, ttl); if (hit !== null) return hit
+  const data = await go(url)
+  if (data !== null) cSet(url, data)
+  return data
+}
+
 /* ── FMP v4 (insider trading, congressional) ── */
 async function fmpv4(path, ttl = 300000) {
   const key = FMP_KEY()
@@ -206,7 +218,8 @@ export async function fetchMetrics(ticker) {
           ? cf.operatingCashFlow - Math.abs(cf.capitalExpenditure) 
           : null)
       const fcfPerShare = (fcf && sharesOutstanding && sharesOutstanding > 0)
-        ? parseFloat((fcf / sharesOutstanding).toFixed(2)) : null
+        ? parseFloat((fcf / sharesOutstanding).toFixed(2)) 
+        : (r?.freeCashFlowPerShareTTM ? parseFloat(r.freeCashFlowPerShareTTM.toFixed(2)) : null)
       // PEG = P/E / earnings growth rate
       const pegRatio = r?.priceToEarningsGrowthRatioTTM || null
       // Balance sheet derived metrics
@@ -228,7 +241,7 @@ export async function fetchMetrics(ticker) {
       // Extract additional ratios from ratios-ttm
       const evEbitda       = r?.enterpriseValueMultipleTTM || null
       const priceToFCF     = r?.priceToFreeCashFlowsRatioTTM || null
-      const roic           = r?.returnOnCapitalEmployedTTM ? r.returnOnCapitalEmployedTTM * 100 : null
+      const roic           = r?.roicTTM ? r.roicTTM * 100 : (r?.returnOnCapitalEmployedTTM ? r.returnOnCapitalEmployedTTM * 100 : null)
       const incomeQuality  = r?.incomeQualityTTM || null
       const quickRatio     = r?.quickRatioTTM || null
       const cashRatio      = r?.cashRatioTTM || null
@@ -696,14 +709,16 @@ export async function fetchTickerFull(ticker) {
 export async function fetchScore(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmp(`/score?symbol=${ticker}`, 3600000)
+    const d = await fmp(`/financial-scores?symbol=${ticker}`, 3600000)
     const s = Array.isArray(d) ? d[0] : d
     if (!s) return null
+    const piotroski = s.piotroskiScore ?? s.piotroski ?? null
+    const altmanZ   = s.altmanZScore  ?? s.altmanZ   ?? null
     return {
-      piotroski:  s.piotroskiScore ?? null,
-      altmanZ:    s.altmanZScore ?? null,
-      piotroskiLabel: s.piotroskiScore >= 7 ? 'Strong' : s.piotroskiScore >= 4 ? 'Neutral' : 'Weak',
-      altmanLabel:    s.altmanZScore >= 3 ? 'Safe' : s.altmanZScore >= 1.8 ? 'Grey Zone' : 'Distress',
+      piotroski,
+      altmanZ,
+      piotroskiLabel: piotroski >= 7 ? 'Strong' : piotroski >= 4 ? 'Neutral' : 'Weak',
+      altmanLabel:    altmanZ >= 3 ? 'Safe' : altmanZ >= 1.8 ? 'Grey Zone' : 'Distress',
     }
   } catch { return null }
 }
@@ -714,19 +729,19 @@ export async function fetchScore(ticker) {
 export async function fetchRating(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmp(`/rating?symbol=${ticker}`, 3600000)
+    const d = await fmp(`/company-rating?symbol=${ticker}`, 3600000)
     const r = Array.isArray(d) ? d[0] : d
     if (!r) return null
     return {
       rating:            r.rating || null,
-      ratingScore:       r.ratingScore ?? null,
-      ratingRecommendation: r.ratingRecommendation || null,
-      dcfScore:          r.ratingDetailsDCFScore ?? null,
-      roeScore:          r.ratingDetailsROEScore ?? null,
-      roaScore:          r.ratingDetailsROAScore ?? null,
-      deScore:           r.ratingDetailsDEScore ?? null,
-      peScore:           r.ratingDetailsPEScore ?? null,
-      pbScore:           r.ratingDetailsPBScore ?? null,
+      ratingScore:       r.ratingScore ?? r.score ?? null,
+      ratingRecommendation: r.ratingRecommendation || r.recommendation || null,
+      dcfScore:          r.ratingDetailsDCFScore ?? r.dcfScore ?? null,
+      roeScore:          r.ratingDetailsROEScore ?? r.roeScore ?? null,
+      roaScore:          r.ratingDetailsROAScore ?? r.roaScore ?? null,
+      deScore:           r.ratingDetailsDEScore  ?? r.deScore  ?? null,
+      peScore:           r.ratingDetailsPEScore  ?? r.peScore  ?? null,
+      pbScore:           r.ratingDetailsPBScore  ?? r.pbScore  ?? null,
     }
   } catch { return null }
 }
@@ -740,11 +755,12 @@ export async function fetchDCF(ticker) {
     const d = await fmp(`/discounted-cash-flow?symbol=${ticker}`, 3600000)
     const r = Array.isArray(d) ? d[0] : d
     if (!r?.dcf) return null
+    const price = r.stockPrice || r.price || 0
     return {
-      dcf:          parseFloat(r.dcf.toFixed(2)),
-      price:        parseFloat((r.stockPrice || r.price || 0).toFixed(2)),
-      upside:       r.stockPrice ? parseFloat(((r.dcf - r.stockPrice) / r.stockPrice * 100).toFixed(1)) : null,
-      date:         r.date || null,
+      dcf:    parseFloat(r.dcf.toFixed(2)),
+      price:  parseFloat(price.toFixed(2)),
+      upside: price ? parseFloat(((r.dcf - price) / price * 100).toFixed(1)) : null,
+      date:   r.date || null,
     }
   } catch { return null }
 }
@@ -851,28 +867,7 @@ export async function fetchESG(ticker) {
    EARNINGS TRANSCRIPT (latest summary)
 ══════════════════════════════════════════ */
 export async function fetchEarningsTranscript(ticker) {
-  if (!hasKeys().fmp) return null
-  try {
-    const list = await fmp(`/earnings-transcript-list?symbol=${ticker}`, 86400000)
-    if (!Array.isArray(list) || !list.length) return null
-    const latest = list[0]
-    if (!latest?.year || !latest?.quarter) return null
-    const d = await fmp(`/earnings-transcript?symbol=${ticker}&year=${latest.year}&quarter=${latest.quarter}`, 86400000)
-    const arr = Array.isArray(d) ? d : (d ? [d] : [])
-    const r = arr[0]
-    if (!r?.content || r.content.length < 100) return null
-    // Find the CEO/CFO opening statement — skip operator intro
-    const content = r.content
-    const openerIdx = content.search(/good (morning|afternoon|evening)|thank you|welcome to|joining us/i)
-    const startIdx = openerIdx > 0 && openerIdx < 500 ? openerIdx : 0
-    const summary = content.slice(startIdx, startIdx + 1800)
-    return {
-      quarter: latest.quarter,
-      year:    latest.year,
-      date:    r.date || latest.date || null,
-      summary: summary + (content.length > startIdx + 1800 ? '…' : ''),
-    }
-  } catch { return null }
+  return null // Earnings transcripts require FMP Premium — not available on Starter plan
 }
 
 

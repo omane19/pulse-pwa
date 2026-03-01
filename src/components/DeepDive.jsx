@@ -634,8 +634,10 @@ export default function DeepDive({ initialTicker, onNavigate }) {
               return(<div className="card" key={i} style={{padding:'12px 16px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div>
-                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.8rem'}}>{eq.period}</div>
-                    <div style={{fontSize:'0.73rem',color:'#B2B2B2',marginTop:2}}>Est ${eq.estimate?.toFixed(2)} · Actual ${eq.actual?.toFixed(2)}</div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.8rem'}}>{eq.period || eq.date?.slice(0,7) || `Q${i+1}`}</div>
+                    <div style={{fontSize:'0.73rem',color:'#B2B2B2',marginTop:2}}>
+                      Est ${eq.estimate?.toFixed(2) ?? '—'} · Actual ${eq.actual != null ? eq.actual.toFixed(2) : 'Pending'}
+                    </div>
                   </div>
                   <div style={{textAlign:'right'}}>
                     <div style={{fontFamily:'var(--font-mono)',fontSize:'0.86rem',color:beat?GREEN:surp?RED:'#B2B2B2'}}>{surp?`${surp>0?'+':''}${surp.toFixed(1)}%`:'—'}</div>
@@ -791,16 +793,7 @@ export default function DeepDive({ initialTicker, onNavigate }) {
             </div></>
           )}
 
-          {/* Earnings Transcript */}
-          {data.transcript && (
-            <><SectionHeader>Earnings Call · Q{data.transcript.quarter} {data.transcript.year}</SectionHeader>
-            <div className="card" style={{padding:'14px 16px'}}>
-              <div style={{fontSize:'0.72rem',color:'#888',marginBottom:8,fontFamily:'var(--font-mono)'}}>
-                {data.transcript.date} · Opening remarks summary
-              </div>
-              <div style={{fontSize:'0.8rem',color:'#B2B2B2',lineHeight:1.7}}>{data.transcript.summary}</div>
-            </div></>
-          )}
+
 
           {/* Revenue Segments */}
           {data.revenueSegments?.segments?.length > 0 && (

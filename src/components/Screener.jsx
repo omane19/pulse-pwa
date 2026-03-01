@@ -156,32 +156,27 @@ export default function Screener({ onNavigateToDive }) {
 
     const out = []
 
-    // FMP bulk mode — if FMP key available, pre-filter from 500+ tickers
-    // Note: /company-screener may not be available on all FMP plans — falls through to curated list if empty
-    if (k.fmp && selCats.length > 0 && customTickers.length === 0) {
+    // FMP bulk mode — ONLY when ALL segments selected (full market scan)
+    // When specific segments selected, use curated UNIVERSE for reliable grouping
+    const allSelected = selCats.length === ALL_CATS.length
+    if (k.fmp && allSelected && customTickers.length === 0) {
       setProgressTicker('FMP bulk fetch…')
-      const bulk = await fetchFMPScreener({ minMcap: 500, limit: 500 })
+      const bulk = await fetchFMPScreener({ minMcap: 500, limit: 300 })
       if (bulk?.length) {
-        // Get selected tickers from UNIVERSE as whitelist (if specific cats selected)
-        const selectedUniverse = selCats.flatMap(c => UNIVERSE[c] || [])
-        const allSelected = selCats.length === ALL_CATS.length // all cats = no filter
-        // Filter bulk to selected categories OR use all 500+
-        const toScore = allSelected
-          ? bulk.slice(0, 300) // cap at 300 for speed
-          : bulk.filter(s => selectedUniverse.includes(s.ticker) || selectedUniverse.length === 0)
-        
         const BATCH = 10
-        for (let i = 0; i < toScore.length; i += BATCH) {
-          const batch = toScore.slice(i, i + BATCH)
+        for (let i = 0; i < bulk.length; i += BATCH) {
+          const batch = bulk.slice(i, i + BATCH)
           setProgressTicker(batch[0]?.ticker || '')
           const batchResults = await Promise.all(batch.map(s => fetchTickerLite(s.ticker)))
           for (const data of batchResults) {
             if (!data) continue
             const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, {})
-            const cat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker)) || toScore.find(s => s.ticker === data.ticker)?.sector || 'Market'
-            out.push({ ...data, result, category: cat })
+            // Try UNIVERSE match first, then use FMP sector as fallback
+            const universeCat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker))
+            const fmpSector = bulk.find(s => s.ticker === data.ticker)?.sector || 'Market'
+            out.push({ ...data, result, category: universeCat || fmpSector })
           }
-          setProgress(Math.round(Math.min(i + BATCH, toScore.length) / toScore.length * 100))
+          setProgress(Math.round(Math.min(i + BATCH, bulk.length) / bulk.length * 100))
         }
         out.sort((a, b) => b.result.pct - a.result.pct)
         setResults(out); setLoading(false); setRan(true)
