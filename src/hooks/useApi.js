@@ -964,18 +964,24 @@ export async function fetchRevenueSegments(ticker) {
   try {
     const d = await fmp(`/revenue-product-segmentation?symbol=${ticker}&period=annual`, 3600000)
     if (!Array.isArray(d) || !d.length) return null
-    // Latest year's segments
     const latest = d[0]
     if (!latest) return null
-    // FMP returns { date: "2024-09-28", segments: { iPhone: 1234, Services: 567, ... } }
-    const segments = latest.segments || latest
-    if (typeof segments !== 'object') return null
-    const entries = Object.entries(segments)
-      .filter(([k]) => k !== 'date' && k !== 'symbol')
+    // FMP stable returns: [{ fiscalYear, period, reportedCurrency, data: { "iPhone": 123, ... } }]
+    // OR legacy: [{ date, iPhone: 123, Services: 456, ... }]
+    const SKIP = new Set(['fiscalYear','period','reportedCurrency','date','symbol','reportDate'])
+    let rawSegments = null
+    if (latest.data && typeof latest.data === 'object') {
+      rawSegments = latest.data
+    } else {
+      rawSegments = latest
+    }
+    const entries = Object.entries(rawSegments)
+      .filter(([k, v]) => !SKIP.has(k) && typeof v === 'number' && v > 0)
       .sort((a, b) => b[1] - a[1])
+    if (!entries.length) return null
     const total = entries.reduce((s, [, v]) => s + v, 0)
     return {
-      date:     latest.date || null,
+      date:     latest.fiscalYear || latest.date || null,
       segments: entries.map(([name, value]) => ({
         name,
         value,

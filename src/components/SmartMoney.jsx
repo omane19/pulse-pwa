@@ -94,8 +94,14 @@ export default function SmartMoney() {
     if (!hasFmp) return
     setLoadingFeed(true)
     const [cong, ins] = await Promise.all([fetchFMPRecentCongress(), fetchFMPRecentInsider()])
-    // Sort by date descending (most recent first)
-    const sortByDate = arr => [...arr].sort((a, b) => new Date(b.date) - new Date(a.date))
+    // Sort by date descending (most recent first), filter out invalid dates
+    const sortByDate = arr => [...arr]
+      .filter(t => t.date && t.date !== '?')
+      .sort((a, b) => {
+        const da = new Date(b.date).getTime()
+        const db = new Date(a.date).getTime()
+        return (isNaN(da) ? 0 : da) - (isNaN(db) ? 0 : db)
+      })
     setCongressFeed(sortByDate(cong))
     setInsiderFeed(sortByDate(ins))
     setLoadingFeed(false)
@@ -110,8 +116,9 @@ export default function SmartMoney() {
     setSearchError(null)
     const [cong, ins] = await Promise.all([fetchFMPCongressional(ticker), fetchFMPInsider(ticker)])
     if (!cong.length && !ins.length) setSearchError(`No smart money activity found for ${ticker}`)
-    setCongressSearch(cong)
-    setInsiderSearch(ins)
+    const sortByDate = arr => [...arr].filter(t => t.date && t.date !== '?').sort((a, b) => new Date(b.date) - new Date(a.date))
+    setCongressSearch(sortByDate(cong))
+    setInsiderSearch(sortByDate(ins))
     setLoadingSearch(false)
   }, [hasFmp])
 
