@@ -67,18 +67,23 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   news    = _a(news)
   earn    = _a(earn)
   metrics = _o(metrics)
-  // Normalize rec: ensure rec.history is always an array
+  // Normalize rec
   if (rec && typeof rec === 'object') {
     if (!Array.isArray(rec.history)) rec = { ...rec, history: [] }
+  } else { rec = {} }
+  // Normalize extras — full deep guard
+  if (!extras || typeof extras !== 'object') extras = {}
+  if (!Array.isArray(extras.upgrades)) extras = { ...extras, upgrades: [] }
+  // Normalize candles — ALL array fields
+  if (candles && typeof candles === 'object') {
+    if (!Array.isArray(candles.closes))     candles = { ...candles, closes: [] }
+    if (!Array.isArray(candles.volumes))    candles = { ...candles, volumes: [] }
+    if (!Array.isArray(candles.highs))      candles = { ...candles, highs: [] }
+    if (!Array.isArray(candles.lows))       candles = { ...candles, lows: [] }
+    if (!Array.isArray(candles.opens))      candles = { ...candles, opens: [] }
+    if (!Array.isArray(candles.timestamps)) candles = { ...candles, timestamps: [] }
   } else {
-    rec = {}
-  }
-  // Normalize extras.upgrades
-  if (extras && !Array.isArray(extras.upgrades)) extras = { ...extras, upgrades: [] }
-  // Normalize candles arrays
-  if (candles) {
-    if (!Array.isArray(candles.closes))    candles = { ...candles, closes: [] }
-    if (!Array.isArray(candles.volumes))   candles = { ...candles, volumes: [] }
+    candles = { closes: [], volumes: [], highs: [], lows: [], opens: [], timestamps: [] }
   }
   // smartMoney: { insiderBuys, congressBuys, cluster } — optional 7th factor
   const hasSmartMoney = smartMoney?.insiderBuys != null

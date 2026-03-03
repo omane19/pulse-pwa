@@ -185,7 +185,8 @@ export async function fetchCandles(ticker, days = 260) {
     const sl = d.c.slice(-200)
     ma200 = parseFloat((sl.reduce((a, b) => a + b, 0) / sl.length).toFixed(2))
   }
-  return { closes: d.c, highs: d.h, lows: d.l, opens: d.o || d.c, volumes: d.v, timestamps: d.t, ma50, ma200, source: 'finnhub' }
+  const _arr = v => Array.isArray(v) ? v : []
+  return { closes: _arr(d.c), highs: _arr(d.h), lows: _arr(d.l), opens: _arr(d.o || d.c), volumes: _arr(d.v), timestamps: _arr(d.t), ma50, ma200, source: 'finnhub' }
 }
 
 /* ══════════════════════════════════════════
@@ -352,10 +353,9 @@ export async function fetchRegionNews(proxy) {
    ANALYST, EARNINGS, PROFILE, INSIDER
 ══════════════════════════════════════════ */
 export async function fetchRec(ticker) {
-  // FMP primary — /stable/analyst-stock-recommendations
   if (hasKeys().fmp) {
     try {
-      const d = await fmpv3(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
+      const d = await fmp(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
       if (Array.isArray(d) && d.length) {
         // FMP returns array sorted newest first
         // Normalize field names to match what scoreAsset expects
@@ -601,7 +601,7 @@ export function computeClusterSignal(insiderData) {
 export async function fetchPriceTarget(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmpv4(`/price-target?symbol=${ticker}`, 3600000)
+    const d = await fmp(`/price-target?symbol=${ticker}`, 3600000)
     const r = Array.isArray(d) ? d[0] : d
     if (!r) return null
     return {
@@ -634,7 +634,7 @@ export async function fetchAnalystEstimates(ticker) {
 export async function fetchUpgradesDowngrades(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmpv4(`/upgrades-downgrades-stock-news?symbol=${ticker}&limit=10`, 3600000)
+    const d = await fmp(`/upgrades-downgrades?symbol=${ticker}&limit=10`, 3600000)
     if (!Array.isArray(d) || !d.length) return null
     return d.map(u => ({
       date:      u.publishedDate?.split('T')[0],
@@ -750,7 +750,7 @@ export async function fetchScore(ticker) {
 export async function fetchRating(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmpv3(`/company-rating?symbol=${ticker}`, 3600000)
+    const d = await fmp(`/company-rating?symbol=${ticker}`, 3600000)
     const r = Array.isArray(d) ? d[0] : d
     if (!r) return null
     return {
