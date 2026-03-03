@@ -36,15 +36,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/financialmodelingprep\.com\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'fmp-cache',
-              expiration: { maxAgeSeconds: 300 },   // 5 min — matches in-memory TTL
-              networkTimeoutSeconds: 10,
-            }
-          },
+          // FMP not cached by SW — handled by in-memory cache in useApi.js
+          // SW caching caused stale 404/403 responses to be replayed
           {
             urlPattern: /^https:\/\/finnhub\.io\/api/,
             handler: 'NetworkFirst',

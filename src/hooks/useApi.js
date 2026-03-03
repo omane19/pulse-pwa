@@ -353,7 +353,7 @@ export async function fetchRegionNews(proxy) {
    ANALYST, EARNINGS, PROFILE, INSIDER
 ══════════════════════════════════════════ */
 export async function fetchRec(ticker) {
-  if (hasKeys().fmp) {
+  if (false) {  // analyst-stock-recommendations not available on current FMP plan
     try {
       const d = await fmp(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
       if (Array.isArray(d) && d.length) {
@@ -599,6 +599,7 @@ export function computeClusterSignal(insiderData) {
 ══════════════════════════════════════════ */
 
 export async function fetchPriceTarget(ticker) {
+  return null  // endpoint not available on current FMP plan
   if (!hasKeys().fmp) return null
   try {
     const d = await fmp(`/price-target?symbol=${ticker}`, 3600000)
@@ -632,6 +633,7 @@ export async function fetchAnalystEstimates(ticker) {
 }
 
 export async function fetchUpgradesDowngrades(ticker) {
+  return null  // endpoint not available on current FMP plan
   if (!hasKeys().fmp) return null
   try {
     const d = await fmp(`/upgrades-downgrades?symbol=${ticker}&limit=10`, 3600000)
@@ -748,6 +750,7 @@ export async function fetchScore(ticker) {
    FMP COMPANY RATING (S+ to D)
 ══════════════════════════════════════════ */
 export async function fetchRating(ticker) {
+  return null  // endpoint not available on current FMP plan
   if (!hasKeys().fmp) return null
   try {
     const d = await fmp(`/company-rating?symbol=${ticker}`, 3600000)
