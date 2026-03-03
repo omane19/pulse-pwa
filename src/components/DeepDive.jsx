@@ -406,11 +406,13 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
       fetchFMPCongressional(data.ticker), fetchFMPInsider(data.ticker),
       fetchAnalystEstimates(data.ticker)
     ]).then(([cong, ins, est]) => {
+        const safeIns  = Array.isArray(ins)  ? ins  : []
+        const safeCong = Array.isArray(cong) ? cong : []
         const cutoff = new Date(Date.now() - 90*86400000)
-        const recentInsiderBuys  = ins.filter(t => t.isBuy  && new Date(t.date) > cutoff).length
-        const recentInsiderSells = ins.filter(t => !t.isBuy && new Date(t.date) > cutoff).length
-        const recentCongBuys     = cong.filter(t => t.isBuy).length
-        const cluster = computeClusterSignal(ins)
+        const recentInsiderBuys  = safeIns.filter(t => t.isBuy  && new Date(t.date) > cutoff).length
+        const recentInsiderSells = safeIns.filter(t => !t.isBuy && new Date(t.date) > cutoff).length
+        const recentCongBuys     = safeCong.filter(t => t.isBuy).length
+        const cluster = computeClusterSignal(safeIns)
         setSmartMoney({ insiderBuys: recentInsiderBuys, insiderSells: recentInsiderSells, congressBuys: recentCongBuys, cluster, rawInsider: ins, rawCongress: cong })
         if (est?.length) setAnalystEst(est)
       })

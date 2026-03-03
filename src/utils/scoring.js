@@ -61,6 +61,18 @@ export function calcMom(candles, quote) {
 }
 
 export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smartMoney, extras = {}) {
+  // Debug logging to find crash source
+  try {
+    console.log('[PULSE scoreAsset] inputs:', {
+      hasQuote: !!quote,
+      candlesClosesType: candles ? typeof candles.closes + (Array.isArray(candles.closes) ? `[${candles.closes?.length}]` : '') : 'no candles',
+      newsType: typeof news + (Array.isArray(news) ? `[${news?.length}]` : ''),
+      recType: typeof rec,
+      recHistoryType: rec ? typeof rec.history + (Array.isArray(rec.history) ? `[${rec.history?.length}]` : '') : 'no rec',
+      earnType: typeof earn + (Array.isArray(earn) ? `[${earn?.length}]` : ''),
+      extrasUpgradesType: extras ? typeof extras.upgrades + (Array.isArray(extras.upgrades) ? `[${extras.upgrades?.length}]` : '') : 'no extras',
+    })
+  } catch(e) {}
   // Safety: normalize ALL inputs that must be arrays or objects
   const _a = v => Array.isArray(v) ? v : []
   const _o = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}
