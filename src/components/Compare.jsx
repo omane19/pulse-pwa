@@ -17,6 +17,12 @@ async function loadOne(ticker) {
   if (!quote) return null
   const ea = v => Array.isArray(v) ? v : []
   const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, ea(news), rec||{}, ea(earnings), undefined, { priceTarget: null, upgrades: [] })
+  // Normalize candles arrays before returning
+  if (candles) {
+    if (!Array.isArray(candles.closes))    candles = { ...candles, closes: [] }
+    if (!Array.isArray(candles.volumes))   candles = { ...candles, volumes: [] }
+    if (!Array.isArray(candles.timestamps)) candles = { ...candles, timestamps: [] }
+  }
   return { ticker, quote, candles, metrics:metrics||{}, result, profile:profile||{},
     name: profile?.name || TICKER_NAMES[ticker] || ticker,
     data: { score, rating, dcf, esg, sharesFloat }
@@ -56,8 +62,10 @@ export default function Compare() {
 
   const chartData = (() => {
     if (!a?.candles || !b?.candles) return []
-    const c0=a.candles.closes; const c1=b.candles.closes
-    const t0=a.candles.timestamps
+    const c0 = Array.isArray(a.candles.closes) ? a.candles.closes : []
+    const c1 = Array.isArray(b.candles.closes) ? b.candles.closes : []
+    const t0 = Array.isArray(a.candles.timestamps) ? a.candles.timestamps : []
+    if (!c0.length || !c1.length || !t0.length) return []
     const len=Math.min(c0.length, c1.length, 60)
     const s0=c0[c0.length-len]; const s1=c1[c1.length-len]
     if (!s0||!s1) return []

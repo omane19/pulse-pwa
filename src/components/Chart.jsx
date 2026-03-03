@@ -188,7 +188,13 @@ export default function Chart({ candles, ma50, color = GREEN, ticker }) {
 
   const { data, patterns, volumeAnalysis, srLevels, currentRSI } = useMemo(() => {
     if (!candles) return { data: [], patterns: [], volumeAnalysis: null, srLevels: null, currentRSI: null }
-    const { closes, highs, lows, opens, volumes, timestamps } = candles
+    const closes    = Array.isArray(candles.closes)     ? candles.closes     : []
+    const highs     = Array.isArray(candles.highs)      ? candles.highs      : []
+    const lows      = Array.isArray(candles.lows)       ? candles.lows       : []
+    const opens     = Array.isArray(candles.opens)      ? candles.opens      : []
+    const volumes   = Array.isArray(candles.volumes)    ? candles.volumes    : []
+    const timestamps = Array.isArray(candles.timestamps) ? candles.timestamps : []
+    if (!closes.length) return { data: [], patterns: [], volumeAnalysis: null, srLevels: null, currentRSI: null }
     const rsis = calcRSI(closes)
     const last60 = Math.max(0, closes.length - 60)
 

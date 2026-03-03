@@ -355,7 +355,7 @@ export async function fetchRec(ticker) {
   // FMP primary — /stable/analyst-stock-recommendations
   if (hasKeys().fmp) {
     try {
-      const d = await fmp(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
+      const d = await fmpv3(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
       if (Array.isArray(d) && d.length) {
         // FMP returns array sorted newest first
         // Normalize field names to match what scoreAsset expects
@@ -601,7 +601,7 @@ export function computeClusterSignal(insiderData) {
 export async function fetchPriceTarget(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmp(`/price-target?symbol=${ticker}`, 3600000)
+    const d = await fmpv4(`/price-target?symbol=${ticker}`, 3600000)
     const r = Array.isArray(d) ? d[0] : d
     if (!r) return null
     return {
@@ -615,6 +615,7 @@ export async function fetchPriceTarget(ticker) {
 }
 
 export async function fetchAnalystEstimates(ticker) {
+  return null  // requires FMP paid plan (402) — disabled
   if (!hasKeys().fmp) return null
   try {
     const d = await fmp(`/analyst-estimates?symbol=${ticker}&period=quarter&limit=4`, 300000)
@@ -633,7 +634,7 @@ export async function fetchAnalystEstimates(ticker) {
 export async function fetchUpgradesDowngrades(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmp(`/upgrades-downgrades?symbol=${ticker}&limit=10`, 3600000)
+    const d = await fmpv4(`/upgrades-downgrades-stock-news?symbol=${ticker}&limit=10`, 3600000)
     if (!Array.isArray(d) || !d.length) return null
     return d.map(u => ({
       date:      u.publishedDate?.split('T')[0],
@@ -749,7 +750,7 @@ export async function fetchScore(ticker) {
 export async function fetchRating(ticker) {
   if (!hasKeys().fmp) return null
   try {
-    const d = await fmp(`/company-rating?symbol=${ticker}`, 3600000)
+    const d = await fmpv3(`/company-rating?symbol=${ticker}`, 3600000)
     const r = Array.isArray(d) ? d[0] : d
     if (!r) return null
     return {
@@ -867,6 +868,7 @@ export async function fetchOwnerEarnings(ticker) {
    ESG SCORES
 ══════════════════════════════════════════ */
 export async function fetchESG(ticker) {
+  return null  // ESG endpoint requires FMP paid plan (402) — disabled to avoid noise
   if (!hasKeys().fmp) return null
   try {
     const d = await fmp(`/esg-disclosures?symbol=${ticker}`, 86400000)
