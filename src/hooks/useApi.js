@@ -374,7 +374,7 @@ export async function fetchRec(ticker) {
   // Finnhub fallback
   const d = await fh(`/stock/recommendation?symbol=${ticker}`, 300000)
   if (!Array.isArray(d) || !d.length) return { current: {}, history: [] }
-  return { current: d[0], history: d.slice(0, 12) }
+  return { current: d[0] || {}, history: Array.isArray(d) ? d.slice(0, 12) : [] }
 }
 
 export async function fetchEarnings(ticker) {
@@ -407,7 +407,7 @@ export async function fetchProfile(ticker) {
 export async function fetchInsider(ticker) {
   const from = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
   const d    = await fh(`/stock/insider-transactions?symbol=${ticker}&from=${from}`, 300000)
-  return d?.data?.slice(0, 15) || []
+  return Array.isArray(d?.data) ? d.data.slice(0, 15) : []
 }
 
 export async function fetchEarningsCalendar(ticker) {

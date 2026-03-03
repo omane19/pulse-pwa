@@ -44,7 +44,7 @@ export function calcMom(candles, quote) {
   if (!candles || !quote) return out
   const closes = candles.closes
   const price = quote.c
-  if (!price || !closes || closes.length === 0) return out
+  if (!price || !Array.isArray(closes) || closes.length === 0) return out
   if (closes.length >= 20) out['1m'] = parseFloat(((price / closes[closes.length - 20] - 1) * 100).toFixed(2))
   if (closes.length >= 60) out['3m'] = parseFloat(((price / closes[closes.length - 60] - 1) * 100).toFixed(2))
   out['1d'] = quote.dp || 0
@@ -61,9 +61,25 @@ export function calcMom(candles, quote) {
 }
 
 export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smartMoney, extras = {}) {
-  // Safety: ensure array params are actually arrays
-  news  = Array.isArray(news)  ? news  : []
-  earn  = Array.isArray(earn)  ? earn  : []
+  // Safety: normalize ALL inputs that must be arrays or objects
+  const _a = v => Array.isArray(v) ? v : []
+  const _o = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}
+  news    = _a(news)
+  earn    = _a(earn)
+  metrics = _o(metrics)
+  // Normalize rec: ensure rec.history is always an array
+  if (rec && typeof rec === 'object') {
+    if (!Array.isArray(rec.history)) rec = { ...rec, history: [] }
+  } else {
+    rec = {}
+  }
+  // Normalize extras.upgrades
+  if (extras && !Array.isArray(extras.upgrades)) extras = { ...extras, upgrades: [] }
+  // Normalize candles arrays
+  if (candles) {
+    if (!Array.isArray(candles.closes))    candles = { ...candles, closes: [] }
+    if (!Array.isArray(candles.volumes))   candles = { ...candles, volumes: [] }
+  }
   // smartMoney: { insiderBuys, congressBuys, cluster } — optional 7th factor
   const hasSmartMoney = smartMoney?.insiderBuys != null
   const W = hasSmartMoney
@@ -87,8 +103,8 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     else mr.push(`RSI ${rsi} — neutral`)
   }
   // Volume spike — direction-aware confirmation
-  const vols = candles?.volumes
-  if (vols && vols.length >= 20) {
+  const vols = Array.isArray(candles?.volumes) ? candles.volumes : []
+  if (vols.length >= 20) {
     const recent = vols[vols.length - 1] || 0
     const avgVol = vols.slice(-20, -1).reduce((a, b) => a + b, 0) / 19
     if (avgVol > 0) {
