@@ -368,7 +368,7 @@ export default function Options() {
   const [result, setResult] = useState(null)
 
   useEffect(() => {
-    if (data) setResult(scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings))
+    if (data) setResult(scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, Array.isArray(data.news)?data.news:[], data.rec, Array.isArray(data.earnings)?data.earnings:[]))
   }, [data])
 
   const handle = () => { const t=input.trim().toUpperCase(); if(t){setTicker(t);fetch(t)} }

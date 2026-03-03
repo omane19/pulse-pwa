@@ -55,7 +55,7 @@ export default function Watchlist({ onNavigateToDive }) {
       const batchResults = await Promise.all(batch.map(fetchTickerLite))
       for (const data of batchResults) {
         if (!data) continue
-        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, { priceTarget: data.priceTarget, upgrades: data.upgrades || [] })
+        const ea=v=>Array.isArray(v)?v:[]; const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea(data.news), data.rec, ea(data.earnings), undefined, { priceTarget: data.priceTarget, upgrades: ea(data.upgrades) })
         // Attach score/rating to result for badge display
         result.fmpRating = data.rating?.rating || null
         result.piotroski = data.score?.piotroski ?? null

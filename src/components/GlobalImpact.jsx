@@ -122,7 +122,7 @@ export default function GlobalImpact({ onNavigate }) {
       const scores = {}
       batchData.forEach((data, idx) => {
         if (!data) return
-        const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings)
+        const _ea=v=>Array.isArray(v)?v:[]; const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, _ea(data.news), data.rec, _ea(data.earnings))
         scores[batch[idx]] = { pct: r.pct, verdict: r.verdict }
       })
       setTickerScores(prev => ({ ...prev, ...scores }))
