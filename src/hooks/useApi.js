@@ -650,7 +650,7 @@ export async function fetchUpgradesDowngrades(ticker) {
 
 // Calculate MACD from closes array (no extra API call needed)
 export function calcMACD(closes) {
-  if (!closes || closes.length < 30) return null
+  if (!Array.isArray(closes) || closes.length < 30) return null
   function ema(arr, period) {
     const k = 2 / (period + 1)
     let val = arr.slice(0, period).reduce((a, b) => a + b, 0) / period
@@ -1091,7 +1091,7 @@ export function useTickerData() {
         fetchRevenueSegments(ticker), fetchDividends(ticker)
       ])
       // Compute MACD locally from candles — no extra API call
-      const macd = candles?.closes ? calcMACD(candles.closes) : null
+      const macd = Array.isArray(candles?.closes) && candles.closes.length >= 30 ? calcMACD(candles.closes) : null
       // Defensive: ensure all array fields are actually arrays
       const ensureArr = v => Array.isArray(v) ? v : []
       setData({

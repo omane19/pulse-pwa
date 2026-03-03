@@ -34,7 +34,7 @@ export function credibilitySentiment(news) {
   })
   const ws = scored.map(s => s.weighted)
   const sorted = [...ws].sort((a, b) => a - b)
-  const trimmed = ws.length >= 6 ? sorted.slice(1, -1) : sorted
+  const trimmed = ws.length >= 6 ? (Array.isArray(sorted) ? sorted : []).slice(1, -1) : sorted
   const avg = trimmed.length > 0 ? trimmed.reduce((a, b) => a + b, 0) / trimmed.length : 0
   return [parseFloat(avg.toFixed(3)), scored]
 }
@@ -49,7 +49,7 @@ export function calcMom(candles, quote) {
   if (closes.length >= 60) out['3m'] = parseFloat(((price / closes[closes.length - 60] - 1) * 100).toFixed(2))
   out['1d'] = quote.dp || 0
   if (closes.length >= 15) {
-    const diffs = closes.slice(-14).map((c, i, arr) => i === 0 ? 0 : c - arr[i - 1]).slice(1)
+    const diffs = (Array.isArray(closes) ? closes : []).slice(-14).map((c, i, arr) => i === 0 ? 0 : c - arr[i - 1]).slice(1)
     const gains = diffs.map(d => d > 0 ? d : 0)
     const losses = diffs.map(d => d < 0 ? -d : 0)
     const ag = gains.reduce((a, b) => a + b, 0) / gains.length
@@ -123,7 +123,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const vols = Array.isArray(candles?.volumes) ? candles.volumes : []
   if (vols.length >= 20) {
     const recent = vols[vols.length - 1] || 0
-    const avgVol = vols.slice(-20, -1).reduce((a, b) => a + b, 0) / 19
+    const avgVol = (Array.isArray(vols) ? vols : []).slice(-20, -1).reduce((a, b) => a + b, 0) / 19
     if (avgVol > 0) {
       const volRatio = recent / avgVol
       const dayUp = (mom['1d'] || 0) >= 0  // was today up or down?
@@ -304,7 +304,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
       const epsSurp = withEst.map(q =>
         ((q.actual - q.estimate) / Math.abs(q.estimate || 1)) * 100)
 
-      const recent4 = epsSurp.slice(0, 4)
+      const recent4 = (Array.isArray(epsSurp) ? epsSurp : []).slice(0, 4)
       const avgS    = recent4.reduce((a, b) => a + b, 0) / recent4.length
       const beats   = recent4.filter(x => x > 0).length
 
