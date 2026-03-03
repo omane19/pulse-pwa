@@ -15,7 +15,8 @@ async function loadOne(ticker) {
     fetchScore(ticker), fetchRating(ticker), fetchDCF(ticker), fetchESG(ticker), fetchSharesFloat(ticker)
   ])
   if (!quote) return null
-  const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, news||[], rec||{}, earnings||[], undefined, { priceTarget: null, upgrades: [] })
+  const ea = v => Array.isArray(v) ? v : []
+  const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, ea(news), rec||{}, ea(earnings), undefined, { priceTarget: null, upgrades: [] })
   return { ticker, quote, candles, metrics:metrics||{}, result, profile:profile||{},
     name: profile?.name || TICKER_NAMES[ticker] || ticker,
     data: { score, rating, dcf, esg, sharesFloat }

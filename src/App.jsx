@@ -66,7 +66,7 @@ const TABS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dive')
-  const [diveQuery, setDiveQuery] = useState('')
+  const [diveQuery, setDiveQuery] = useState({ ticker: '', version: 0 })
   const [showOnboarding, setShowOnboarding] = useState(() => !checkOnboarded())
   const [mkt, setMkt] = useState(() => marketStatus())
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  const navigateToDive = (ticker) => { setDiveQuery(ticker); setActiveTab('dive') }
+  const navigateToDive = (ticker) => { setDiveQuery(prev => ({ ticker: ticker.toUpperCase(), version: prev.version + 1 })); setActiveTab('dive') }
   const doneOnboarding = () => { markOnboarded(); setShowOnboarding(false) }
 
   return (
@@ -98,7 +98,7 @@ export default function App() {
       </header>
 
       <main className="page-area">
-        {activeTab === 'dive'    && <DeepDive initialTicker={diveQuery} onNavigate={navigateToDive} />}
+        {activeTab === 'dive'    && <DeepDive initialTicker={diveQuery.ticker} diveVersion={diveQuery.version} onNavigate={navigateToDive} />}
         {activeTab === 'watch'   && <Watchlist onNavigateToDive={navigateToDive} />}
         {activeTab === 'screen'  && <Screener onNavigateToDive={navigateToDive} />}
         {activeTab === 'options' && <Options />}

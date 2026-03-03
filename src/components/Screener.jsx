@@ -65,10 +65,65 @@ function RankCard({ item, rank, showCat = true, onNavigate }) {
             </button>
           )}
           <FactorBars scores={r.scores} />
+
+          {/* Key metrics snapshot */}
+          {(() => {
+            const mt = item.metrics || {}
+            const metrics = [
+              mt.peRatio && ['P/E', mt.peRatio.toFixed(1) + '×'],
+              mt.pegRatio && ['PEG', mt.pegRatio.toFixed(2)],
+              mt.evEbitda  && ['EV/EBITDA', mt.evEbitda.toFixed(1) + '×'],
+              mt.roe       && ['ROE', mt.roe.toFixed(1) + '%'],
+              mt.roic      && ['ROIC', mt.roic.toFixed(1) + '%'],
+              mt.grossMargin && ['Gross Margin', mt.grossMargin.toFixed(1) + '%'],
+              mt.netMargin && ['Net Margin', mt.netMargin.toFixed(1) + '%'],
+              mt.debtEquity && ['Debt/Eq', mt.debtEquity.toFixed(2)],
+              mt.currentRatio && ['Current', mt.currentRatio.toFixed(2)],
+            ].filter(Boolean)
+            if (!metrics.length) return null
+            return (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, margin:'10px 0' }}>
+                {metrics.slice(0,9).map(([label, val]) => (
+                  <div key={label} style={{ background:'#0D0D0D', border:'1px solid #1e1e1e', borderRadius:6, padding:'6px 8px' }}>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#666', textTransform:'uppercase', marginBottom:2 }}>{label}</div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color:'#fff' }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
+          {/* Piotroski + Altman + FMP Rating + DCF row */}
+          {(() => {
+            const s = item.score; const rat = item.rating
+            if (!s && !rat) return null
+            return (
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6, margin:'8px 0' }}>
+                {s?.piotroski != null && (
+                  <div style={{ flex:1, minWidth:70, background:'#0D0D0D', border:'1px solid #1e1e1e', borderRadius:6, padding:'6px 8px', textAlign:'center' }}>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.5rem', color:'#666', textTransform:'uppercase', marginBottom:2 }}>Piotroski</div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.78rem', color: s.piotroski >= 7 ? GREEN : s.piotroski >= 4 ? '#FFD700' : RED }}>{s.piotroski}/9</div>
+                  </div>
+                )}
+                {s?.altmanZ != null && (
+                  <div style={{ flex:1, minWidth:70, background:'#0D0D0D', border:'1px solid #1e1e1e', borderRadius:6, padding:'6px 8px', textAlign:'center' }}>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.5rem', color:'#666', textTransform:'uppercase', marginBottom:2 }}>Altman Z</div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.78rem', color: s.altmanZ > 3 ? GREEN : s.altmanZ > 1.8 ? '#FFD700' : RED }}>{s.altmanZ.toFixed(1)}</div>
+                  </div>
+                )}
+                {rat?.ratingScore != null && (
+                  <div style={{ flex:1, minWidth:70, background:'#0D0D0D', border:'1px solid #1e1e1e', borderRadius:6, padding:'6px 8px', textAlign:'center' }}>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.5rem', color:'#666', textTransform:'uppercase', marginBottom:2 }}>FMP Rating</div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.78rem', color:CYAN }}>{rat.rating || '—'}</div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Factor breakdown reasons */}
-          <div style={{ marginTop:10, background:'#0A0A0A', borderRadius:8, padding:'10px 12px' }}>
+          <div style={{ marginTop:8, background:'#0A0A0A', borderRadius:8, padding:'10px 12px' }}>
             {Object.entries(r.scores).map(([factor, score]) => {
-              const pct = Math.round((score + 1) / 2 * 100)
               const col = score > 0.1 ? GREEN : score < -0.1 ? RED : G1
               const reasons = r.reasons?.[factor] || []
               return (
@@ -170,7 +225,8 @@ export default function Screener({ onNavigateToDive }) {
           const batchResults = await Promise.all(batch.map(s => fetchTickerLite(s.ticker)))
           for (const data of batchResults) {
             if (!data) continue
-            const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, {})
+            const ea = v => Array.isArray(v) ? v : []
+            const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea(data.news), data.rec, ea(data.earnings), undefined, {})
             // Try UNIVERSE match first, then use FMP sector as fallback
             const universeCat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker))
             const fmpSector = bulk.find(s => s.ticker === data.ticker)?.sector || 'Market'
@@ -195,7 +251,8 @@ export default function Screener({ onNavigateToDive }) {
       const batchResults = await Promise.all(batch.map(fetchTickerLite))
       for (const data of batchResults) {
         if (!data) continue
-        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, undefined, {})
+        const ea2 = v => Array.isArray(v) ? v : []
+        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea2(data.news), data.rec, ea2(data.earnings), undefined, {})
         const cat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker)) || 'Custom'
         out.push({ ...data, result, category: cat })
       }

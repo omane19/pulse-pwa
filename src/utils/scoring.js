@@ -61,6 +61,9 @@ export function calcMom(candles, quote) {
 }
 
 export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smartMoney, extras = {}) {
+  // Safety: ensure array params are actually arrays
+  news  = Array.isArray(news)  ? news  : []
+  earn  = Array.isArray(earn)  ? earn  : []
   // smartMoney: { insiderBuys, congressBuys, cluster } — optional 7th factor
   const hasSmartMoney = smartMoney?.insiderBuys != null
   const W = hasSmartMoney

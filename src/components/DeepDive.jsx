@@ -374,7 +374,7 @@ function SignalHistorySection({ ticker, currentPrice }) {
 }
 
 /* ── Main ─────────────────────────────────────────────────────── */
-export default function DeepDive({ initialTicker, onNavigate }) {
+export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate }) {
   const [input,  setInput]  = useState(initialTicker || 'AAPL')
   const [ticker, setTicker] = useState('')
   const {data, loading, error, fetch} = useTickerData()
@@ -387,14 +387,14 @@ export default function DeepDive({ initialTicker, onNavigate }) {
 
   useEffect(() => {
     if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
-  }, [initialTicker])
+  }, [initialTicker, diveVersion])
 
   useEffect(() => { setTracked(false) }, [ticker])
 
   // Re-score whenever base data or smart money updates
   useEffect(() => {
     if (!data) return
-    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, data.news, data.rec, data.earnings, smartMoney || undefined, { priceTarget: data.priceTarget, upgrades: data.upgrades || [], macd: data.macd || null })
+    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, Array.isArray(data.news)?data.news:[], data.rec, Array.isArray(data.earnings)?data.earnings:[], smartMoney || undefined, { priceTarget: data.priceTarget, upgrades: Array.isArray(data.upgrades)?data.upgrades:[], macd: data.macd || null })
     setResult(r)
   }, [data, smartMoney])
 

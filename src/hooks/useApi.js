@@ -379,14 +379,20 @@ export async function fetchRec(ticker) {
 
 export async function fetchEarnings(ticker) {
   if (hasKeys().fmp) {
-    const d = await fmp(`/earnings?symbol=${ticker}&limit=8`, 300000)
-    if (Array.isArray(d) && d.length) {
+    const raw = await fmp(`/earnings?symbol=${ticker}&limit=8`, 300000)
+    // FMP may return array, object with earnings key, or single object
+    const d = Array.isArray(raw) ? raw
+      : Array.isArray(raw?.earnings) ? raw.earnings
+      : raw && typeof raw === 'object' && raw.date ? [raw]
+      : null
+    if (d?.length) {
       return d.map(q => ({
-        date:        q.date,
-        actual:      q.epsActual,
-        estimate:    q.epsEstimated,
-        revActual:   q.revenueActual,
-        revEstimate: q.revenueEstimated,
+        date:        q.date || null,
+        period:      q.period || q.date?.slice(0,7) || null,
+        actual:      q.epsActual ?? q.actual ?? null,
+        estimate:    q.epsEstimated ?? q.estimate ?? null,
+        revActual:   q.revenueActual ?? null,
+        revEstimate: q.revenueEstimated ?? null,
       }))
     }
   }
@@ -501,16 +507,20 @@ export async function fetchFMPScreener({ minMcap = 500, limit = 500 } = {}) {
 export async function fetchFMPCongressional(ticker) {
   const d = await fmp(`/senate-trades?symbol=${ticker}`, 3600000)
   if (!Array.isArray(d) || !d.length) return []
-  return d.slice(0, 20).map(t => ({
-    name:    (t.firstName || '') + ' ' + (t.lastName || ''),
-    party:   t.party || '?',
-    type:    t.type || t.transactionType || '?',
-    amount:  t.amount || '?',
-    date:    t.transactionDate || t.disclosureDate || '?',
-    ticker:  t.ticker || t.symbol || ticker,
-    isBuy:   (t.type || t.transactionType || '').toLowerCase().includes('purchase') ||
-             (t.type || t.transactionType || '').toLowerCase().includes('buy'),
-  }))
+  return d.slice(0, 20).map(t => {
+    const rawT = t.ticker || t.symbol || t.asset || ticker
+    const match = rawT.match(/\(([A-Z]{1,5})\)/) || rawT.match(/^([A-Z]{1,5})$/)
+    return {
+      name:    ((t.firstName || '') + ' ' + (t.lastName || '')).trim() || 'Unknown',
+      party:   t.party || '?',
+      type:    t.type || t.transactionType || '?',
+      amount:  t.amount || '?',
+      date:    t.transactionDate || t.disclosureDate || '?',
+      ticker:  match ? match[1] : (rawT.length <= 5 ? rawT.toUpperCase() : ticker),
+      isBuy:   (t.type || t.transactionType || '').toLowerCase().includes('purchase') ||
+               (t.type || t.transactionType || '').toLowerCase().includes('buy'),
+    }
+  })
 }
 
 export async function fetchFMPInsider(ticker) {
@@ -555,15 +565,22 @@ export async function fetchFMPRecentCongress() {
   return all.filter(t => {
     const type = (t.type || t.transactionType || '').toLowerCase()
     return type.includes('purchase') || type.includes('buy')
-  }).slice(0, 50).map(t => ({
-    name:   (t.firstName || '') + ' ' + (t.lastName || ''),
-    party:  t.party || '?',
-    ticker: t.ticker || t.symbol || '?',
-    type:   t.type || t.transactionType || '?',
-    amount: t.amount || '?',
-    date:   t.transactionDate || t.disclosureDate || '?',
-    isBuy:  true,
-  }))
+  }).slice(0, 50).map(t => {
+    // FMP field name variations: ticker, symbol, asset, assetDescription
+    const rawTicker = t.ticker || t.symbol || t.asset || ''
+    // Extract ticker from asset description like "Apple Inc (AAPL)" or plain "AAPL"
+    const tickerMatch = rawTicker.match(/\(([A-Z]{1,5})\)/) || rawTicker.match(/^([A-Z]{1,5})$/)
+    const ticker = tickerMatch ? tickerMatch[1] : (rawTicker.length > 0 && rawTicker.length <= 5 ? rawTicker.toUpperCase() : null)
+    return {
+      name:   ((t.firstName || '') + ' ' + (t.lastName || '')).trim() || 'Unknown',
+      party:  t.party || '?',
+      ticker: ticker || t.assetDescription?.slice(0, 10) || '?',
+      type:   t.type || t.transactionType || '?',
+      amount: t.amount || '?',
+      date:   t.transactionDate || t.disclosureDate || '?',
+      isBuy:  true,
+    }
+  })
 }
 
 /* ── Cluster signal ── */
@@ -667,7 +684,7 @@ export async function fetchPeers(ticker) {
   if (!hasKeys().fmp) return []
   try {
     const d = await fmp(`/stock-peers?symbol=${ticker}`, 3600000)
-    const raw = Array.isArray(d) ? d[0]?.peersList || d : []
+    const raw = Array.isArray(d) ? (d[0]?.peersList || d[0]?.peers || d) : Array.isArray(d?.peersList) ? d.peersList : []
     const peers = raw.map(p => typeof p === 'string' ? p : (p?.symbol || p?.ticker || null)).filter(Boolean)
     return peers.filter(p => p !== ticker).slice(0, 4)  // top 4, exclude self
   } catch { return [] }
@@ -675,13 +692,15 @@ export async function fetchPeers(ticker) {
 
 export async function fetchTickerLite(ticker) {
   try {
-    const [quote, candles, metrics, rec, earnings, news, priceTarget, upgrades] = await Promise.all([
+    const [quote, candles, metrics, rec, earnings, news, priceTarget, upgrades, score, rating] = await Promise.all([
       fetchQuote(ticker), fetchCandles(ticker, 260), fetchMetrics(ticker),
       fetchRec(ticker), fetchEarnings(ticker), fetchNews(ticker, 5),
-      fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker)
+      fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker),
+      fetchScore(ticker), fetchRating(ticker)
     ])
     if (!quote) return null
-    return { ticker, quote, candles, metrics: metrics || {}, news: news || [], rec: rec || {}, earnings: earnings || [], priceTarget: priceTarget || null, upgrades: upgrades || [] }
+    const ea = v => Array.isArray(v) ? v : []
+    return { ticker, quote, candles, metrics: metrics || {}, news: ea(news), rec: rec || {}, earnings: ea(earnings), priceTarget: priceTarget || null, upgrades: ea(upgrades), score: score || null, rating: rating || null }
   } catch { return null }
 }
 
@@ -693,10 +712,11 @@ export async function fetchTickerFull(ticker) {
       fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker)
     ])
     if (!quote) return null
+    const ea = v => Array.isArray(v) ? v : []
     return {
-      ticker, quote, candles, metrics: metrics || {}, news: news || [], rec: rec || {},
-      earnings: earnings || [], name: profile?.name || ticker,
-      priceTarget: priceTarget || null, upgrades: upgrades || [],
+      ticker, quote, candles, metrics: metrics || {}, news: ea(news), rec: rec || {},
+      earnings: ea(earnings), name: profile?.name || ticker,
+      priceTarget: priceTarget || null, upgrades: ea(upgrades),
       sector: profile?.finnhubIndustry || '', mcap: profile?.marketCapitalization
     }
   } catch { return null }
@@ -1067,12 +1087,14 @@ export function useTickerData() {
       ])
       // Compute MACD locally from candles — no extra API call
       const macd = candles?.closes ? calcMACD(candles.closes) : null
+      // Defensive: ensure all array fields are actually arrays
+      const ensureArr = v => Array.isArray(v) ? v : []
       setData({
-        ticker, quote, candles, metrics: metrics || {}, news: news || [],
-        rec: rec || {}, earnings: earnings || [], profile: profile || {},
-        insider: insider || [], ec,
-        priceTarget: priceTarget || null, upgrades: upgrades || [],
-        macd: macd || null, peers: peers || [],
+        ticker, quote, candles, metrics: metrics || {}, news: ensureArr(news),
+        rec: rec || {}, earnings: ensureArr(earnings), profile: profile || {},
+        insider: ensureArr(insider), ec,
+        priceTarget: priceTarget || null, upgrades: ensureArr(upgrades),
+        macd: macd || null, peers: ensureArr(peers),
         score: score || null, rating: rating || null,
         dcf: dcf || null, sharesFloat: sharesFloat || null,
         priceChange: priceChange || null, executives: executives || null,
