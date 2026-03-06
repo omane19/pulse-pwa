@@ -215,7 +215,7 @@ function MacroIndicators({ econData }) {
       <div style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', color:G1, marginBottom:10 }}>🏦 Key Macro Indicators</div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
         {indicators.map(({ label, data, good }) => {
-          if (!data?.value) return null
+          if (data?.value == null) return null
           const isGood = good(data.value)
           const color = isGood ? GREEN : RED
           const delta = data.prev ? data.value - data.prev : null

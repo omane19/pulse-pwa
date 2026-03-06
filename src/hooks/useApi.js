@@ -456,9 +456,9 @@ export async function fetchMacroLive() {
     fmp(`/economic-calendar?from=${from}&to=${to}`, 1800000),
     fmp(`/sector-performance`, 1800000),
     fmp(`/treasury-rates`, 3600000),
-    fmp(`/economic-indicator?name=GDP&limit=4`, 3600000),
-    fmp(`/economic-indicator?name=CPI&limit=4`, 3600000),
-    fmp(`/economic-indicator?name=unemploymentRate&limit=4`, 3600000),
+    fmpv4(`/economic-indicator?name=GDP&limit=4`, 3600000),
+    fmpv4(`/economic-indicator?name=CPI&limit=4`, 3600000),
+    fmpv4(`/economic-indicator?name=unemploymentRate&limit=4`, 3600000),
   ])
 
   const KEY_EVENTS = ['FOMC','Federal Reserve','CPI','GDP','Nonfarm','Unemployment','PCE','PPI','Retail Sales','ISM']

@@ -256,19 +256,19 @@ export const GLOBAL_CHAINS = [
 ]
 
 export const MACRO = {
-  regime: "Risk-On · Late Cycle · Fed Easing",
-  summary: "Fed cutting rates since late 2024. AI capex supercycle driving tech above consensus. Inflation cooling to ~2.5% but sticky in services. Labour market resilient at ~4.1%. US deficit ~6% GDP pressures bond supply. ECB cutting faster than Fed — USD divergence is the key cross-asset theme.",
+  regime: "Neutral · Consolidation · Tariff Uncertainty",
+  summary: "Markets in consolidation after strong 2024 AI rally. Trump tariff policy creating cross-asset volatility — USD strengthening, EM under pressure. Fed on hold at 4.25–4.5%, no cuts priced until H2 2026. Inflation sticky at ~2.8%. Labour market solid at ~4.1%. AI capex supercycle intact but valuations stretched. Bond yields elevated — 10Y at ~4.3%.",
   tailwinds: [
-    ["AI & Semiconductors","Data centre build-out accelerating. NVDA, AMD, MSFT, META all raising capex significantly."],
-    ["Healthcare / GLP-1","Ozempic/Wegovy drug cycle multi-year runway for LLY, NVO."],
-    ["Gold & Hard Assets","Central bank buying + de-dollarisation + rate cuts support gold structurally."],
-    ["Quality Large-Cap","Uncertainty rewards cash-generative, low-debt businesses with pricing power."],
+    ["AI & Data Centres", "NVDA, AVGO, MSFT capex buildout continues — AI infrastructure demand structural, not cyclical."],
+    ["Defence & Industrials", "NATO spending mandates + US defence budget expansion lifting LMT, RTX, GD, NOC."],
+    ["Gold & Hard Assets", "Central bank buying + geopolitical uncertainty + de-dollarisation thesis pushing GLD, GDX higher."],
+    ["Energy (Oil & Gas)", "Supply discipline from OPEC+ + geopolitical risk premium keeping XOM, CVX, COP resilient."],
   ],
   headwinds: [
-    ["Long-Duration Bonds","Treasury supply surge + QT = structural headwind for TLT."],
-    ["Regional Banks","Commercial real estate exposure and net interest margin pressure."],
-    ["Consumer Discretionary","Credit card delinquencies rising — lower-income consumer under stress."],
-    ["High P/E Growth","Priced for perfection — any earnings miss punished very hard."],
+    ["Tariff Risk", "US trade policy uncertainty hitting consumer goods, autos, and tech hardware supply chains."],
+    ["High Valuations", "S&P forward P/E ~21x — above historical average. Any earnings miss punished hard."],
+    ["Rates Staying Higher", "Fed on hold — no cuts until late 2026 at earliest. Pressure on long-duration assets and REITs."],
+    ["China / EM Exposure", "Tariffs + strong USD = headwind for multinationals with significant China revenue (AAPL, QCOM)."],
   ],
 }
 

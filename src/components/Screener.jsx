@@ -395,7 +395,7 @@ export default function Screener({ onNavigateToDive }) {
     const calendarData = await fetchDividendScreener({ minYield: 0, limit: 200 })
 
     if (!calendarData.length) {
-      setDivError('No dividend data returned. Check your FMP API key in Setup.')
+      setDivError('No dividend data returned from FMP. The /stable/dividends-calendar endpoint may not be available on your plan.')
       setDivLoading(false)
       return
     }
