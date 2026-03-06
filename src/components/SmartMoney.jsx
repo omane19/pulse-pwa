@@ -135,7 +135,7 @@ export default function SmartMoney({ onNavigateToDive }) {
         <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.8rem', color:'var(--fg)', marginBottom:8 }}>FMP API Key Required</div>
         <div style={{ fontSize:'0.72rem', color:'#888', lineHeight:1.6, maxWidth:280, margin:'0 auto 16px' }}>
           Smart Money tracking requires a Financial Modeling Prep key.<br/>
-          Add <code style={{ color:'#00ff88' }}>VITE_FMP_KEY</code> in the Setup tab.
+          Add <code style={{ color:'#00ff88' }}>FMP_KEY</code> in Vercel environment variables.
         </div>
         <div style={{ fontSize:'0.65rem', color:'#666', fontFamily:'var(--font-mono)' }}>
           FMP Starter ~$25/month → congressional + CEO trades

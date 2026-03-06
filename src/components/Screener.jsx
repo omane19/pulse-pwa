@@ -327,7 +327,7 @@ export default function Screener({ onNavigateToDive }) {
 
   const runScreener = useCallback(async () => {
     const k = hasKeys()
-    if (!k.fh && !k.fmp) { setApiError('API key missing. Go to the Setup tab.'); return }
+    // Note: keys may be server-side only — attempt fetch and let proxy handle missing keys
     setApiError(null)
     setLoading(true); setProgress(0); setResults([]); setRan(false)
 
@@ -388,7 +388,7 @@ export default function Screener({ onNavigateToDive }) {
   // ── Dividend scan — uses /stable/dividends-calendar (one call, all payers this month) ──
   const runDividendScan = useCallback(async () => {
     const k = hasKeys()
-    if (!k.fmp) { setDivError('FMP API key required for Dividend Explorer. Add it in Setup tab.'); return }
+    // Note: FMP key is server-side — proxy handles auth
     setDivLoading(true); setDivProgress(0); setDivResults([]); setDivRan(false); setDivError(null)
 
     setDivProgressTicker('Fetching dividend calendar…')

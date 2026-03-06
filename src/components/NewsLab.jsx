@@ -67,7 +67,7 @@ export default function NewsLab() {
 
   async function run(tk) {
     if (!tk) return
-    if (!hasKeys().fh) { setError('Add your Finnhub key in Setup tab.'); return }
+    // key check removed — server-side proxy handles auth
     setLoading(true); setError(null); setNews(null)
     try {
       const [nl, ins] = await Promise.all([

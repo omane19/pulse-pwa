@@ -12,14 +12,9 @@ let TRADIER_KEY  = () => getKey('VITE_TRADIER_KEY')  // kept for fallback compat
 let POLYGON_KEY  = () => getKey('VITE_POLYGON_KEY')
 
 export function hasKeys() {
-  const fh  = FH_KEY()
-  const fmp = FMP_KEY()
-  return {
-    fh:  fh.length  > 8 && !fh.includes('your_'),
-    av:  AV_KEY().length > 8,
-    fmp: fmp.length > 8 && !fmp.includes('your_'),
-    polygon: POLYGON_KEY().length > 8,
-  }
+  // Keys are stored server-side in Vercel (no VITE_ prefix) — browser can't read them.
+  // Always return true and let the proxy handle missing key errors.
+  return { fh: true, av: true, fmp: true, polygon: POLYGON_KEY().length > 8 }
 }
 
 /* ── Cache (max 300 entries, evict oldest on overflow) ── */
@@ -1226,10 +1221,6 @@ export function useTickerData() {
 
   const load = useCallback(async (ticker) => {
     if (!ticker) return
-    if (!hasKeys().fh && !hasKeys().fmp) {
-      setError('No API key found — go to Setup tab to add your Finnhub key.')
-      return
-    }
     setLoading(true); setError(null); setData(null)
     try {
       const quote = await fetchQuote(ticker)
