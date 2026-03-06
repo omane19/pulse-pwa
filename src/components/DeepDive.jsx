@@ -6,6 +6,7 @@ import { TICKER_NAMES } from '../utils/constants.js'
 import { trackSignal } from '../hooks/useSignalLog.js'
 import Chart from './Chart.jsx'
 import { VerdictPill, FactorBars, MetricCell, NewsCard, EarningsWarning, LoadingBar, SectionHeader, Toast, PullToRefresh } from './shared.jsx'
+import { loadSignals } from '../hooks/useSignalLog.js'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'
 
@@ -300,7 +301,46 @@ function PositionSizing({ verdict, price, capital=10000, allocPct=45 }) {
 }
 
 /* ── Verdict Card ─────────────────────────────────────────────── */
-function VerdictCard({ result }) {
+function ScoreSparkline({ ticker, currentScore }) {
+  const [history, setHistory] = React.useState([])
+  React.useEffect(() => {
+    loadSignals().then(signals => {
+      const past = signals
+        .filter(s => s.ticker === ticker && s.score != null)
+        .slice(-6)
+        .map(s => ({ score: s.score, date: new Date(s.tracked_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}), verdict: s.verdict }))
+      setHistory(past)
+    }).catch(() => {})
+  }, [ticker])
+  if (history.length < 2) return null
+  const scores = [...history.map(h => h.score), currentScore]
+  const min = Math.min(...scores) - 5; const max = Math.max(...scores) + 5
+  const W = 120; const H = 28
+  const pts = scores.map((s, i) => {
+    const x = (i / (scores.length - 1)) * W
+    const y = H - ((s - min) / (max - min)) * H
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+  const lastColor = currentScore > history[history.length-1].score ? '#00C805' : currentScore < history[history.length-1].score ? '#FF5000' : '#FFD700'
+  return (
+    <div style={{marginTop:8,marginBottom:4}}>
+      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',color:'#555',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Score History</div>
+      <svg width={W} height={H+4} style={{overflow:'visible'}}>
+        <polyline points={pts} fill="none" stroke="#333" strokeWidth={1.5}/>
+        <polyline points={pts.split(' ').slice(-2).join(' ')} fill="none" stroke={lastColor} strokeWidth={2}/>
+        {scores.map((s,i) => {
+          const x = (i / (scores.length-1)) * W
+          const y = H - ((s - min) / (max - min)) * H
+          const isLast = i === scores.length - 1
+          return <circle key={i} cx={x} cy={y} r={isLast ? 3 : 2} fill={isLast ? lastColor : '#333'} stroke={isLast ? lastColor : 'none'} />
+        })}
+      </svg>
+      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',color:'#444',marginTop:2}}>{history[0].date} → now</div>
+    </div>
+  )
+}
+
+function VerdictCard({ result, ticker }) {
   const {pct,verdict,color,conviction,factorsAgree,reasons,scores,mom,uncertainty}=result
   const e={BUY:'●',HOLD:'◆',AVOID:'✕'}[verdict]
   const allReasons=Object.values(reasons).flat()
@@ -319,7 +359,8 @@ function VerdictCard({ result }) {
       <div style={{background:'#2E2E2E',borderRadius:3,height:3,width:160,margin:'12px auto 7px',overflow:'hidden'}}>
         <div style={{height:3,borderRadius:3,width:`${conviction}%`,background:`linear-gradient(90deg,${color},${color}88)`,transition:'width .8s'}}/>
       </div>
-      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#B2B2B2',marginBottom:12}}>Conviction {conviction.toFixed(0)}% · {factorsAgree}/{Object.keys(scores).length} factors agree</div>
+      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#B2B2B2',marginBottom:8}}>Conviction {conviction.toFixed(0)}% · {factorsAgree}/{Object.keys(scores).length} factors agree</div>
+      {ticker && <ScoreSparkline ticker={ticker} currentScore={pct} />}
       <div style={{maxWidth:360,margin:'0 auto',textAlign:'left',marginBottom:12}}>
         {allReasons.slice(0,8).map((r,i)=><div key={i} style={{fontSize:'0.78rem',color:'#B2B2B2',padding:'4px 0',borderBottom:'1px solid #1A1A1A',lineHeight:1.6}}>· {r}</div>)}
       </div>
@@ -339,20 +380,34 @@ function VerdictCard({ result }) {
 
 /* ── Signal History Section ── */
 function SignalHistorySection({ ticker, currentPrice }) {
-  if (!ticker) return null
-  let history = []
-  if (!history.length) return null
+  const [history, setHistory] = React.useState([])
+  React.useEffect(() => {
+    if (!ticker) return
+    loadSignals().then(signals => {
+      const past = signals
+        .filter(s => s.ticker === ticker)
+        .slice(0, 8)
+        .map(s => ({
+          id: s.id, verdict: s.verdict, score: s.score,
+          price: s.price_at_signal,
+          ts: s.tracked_at, return30: s.return_30d
+        }))
+      setHistory(past)
+    }).catch(() => {})
+  }, [ticker])
+
+  if (!ticker || !history.length) return null
   const GREEN = '#00C805'; const RED = '#FF5000'; const GOLD = '#FFD700'; const G4 = '#252525'
   return (
     <>
       <SectionHeader>Your Signal History — {ticker}</SectionHeader>
       <div className="card" style={{ padding: '0 16px' }}>
-        {history.slice(0, 8).map((h, i) => {
+        {history.map((h, i) => {
           const change = currentPrice && h.price ? ((currentPrice - h.price) / h.price * 100) : null
           const color = h.verdict === 'BUY' ? GREEN : h.verdict === 'AVOID' ? RED : GOLD
           const label = new Date(h.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           return (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < history.length - 1 ? `1px solid ${G4}` : 'none' }}>
+            <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < history.length - 1 ? `1px solid ${G4}` : 'none' }}>
               <div>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color, marginRight: 8, fontWeight: 700 }}>{h.verdict}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: '#B2B2B2' }}>{label}</span>
@@ -362,6 +417,11 @@ function SignalHistorySection({ ticker, currentPrice }) {
                 {change != null && (
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: change >= 0 ? GREEN : RED, marginTop: 2 }}>
                     ${h.price?.toFixed(2)} → {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+                  </div>
+                )}
+                {h.return30 != null && change == null && (
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: h.return30 >= 0 ? GREEN : RED, marginTop: 2 }}>
+                    30d: {h.return30 >= 0 ? '+' : ''}{h.return30.toFixed(1)}%
                   </div>
                 )}
               </div>
@@ -509,7 +569,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
             )}
           </div>
 
-          <VerdictCard result={result}/>
+          <VerdictCard result={result} ticker={ticker}/>
 
           {data.candles && (
             <>
@@ -529,7 +589,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           <div className="metrics-grid">
             <MetricCell label="Price"     value={`$${price?.toFixed(2)}`}  delta={`${chg>=0?'+':''}${chg?.toFixed(2)}%`}   deltaColor={chg>=0?'pos':'neg'}/>
             <MetricCell label="50-Day MA" value={ma50?`$${ma50}`:'N/A'}    delta={ma50?(price>ma50?'▲ Above':'▼ Below'):''} deltaColor={ma50?(price>ma50?'pos':'neg'):'neu'}/>
-            <MetricCell label="200-Day MA" value={data.candles?.ma200?`$${data.candles.ma200}`:'N/A'} delta={data.candles?.ma200?(price>data.candles.ma200?'▲ Above':'▼ Below'):''} deltaColor={data.candles?.ma200?(price>data.candles.ma200?'pos':'neg'):'neu'}/>
+            <MetricCell label={data.candles?.ma200Partial ? '~200d MA' : '200-Day MA'} value={data.candles?.ma200?`$${data.candles.ma200}`:'N/A'} delta={data.candles?.ma200?(price>data.candles.ma200?'▲ Above':'▼ Below'):''} deltaColor={data.candles?.ma200?(price>data.candles.ma200?'pos':'neg'):'neu'}/>
             <MetricCell label="52W High"  value={data.quote?.yearHigh?`$${data.quote.yearHigh}`:'N/A'} delta={data.quote?.yearHigh?`${((price/data.quote.yearHigh-1)*100).toFixed(1)}%`:''} deltaColor={data.quote?.yearHigh&&price>=data.quote.yearHigh*0.95?'pos':'neu'}/>
             <MetricCell label="52W Low"   value={data.quote?.yearLow?`$${data.quote.yearLow}`:'N/A'}  delta={data.quote?.yearLow?`+${((price/data.quote.yearLow-1)*100).toFixed(1)}%`:''} deltaColor='neu'/>
             <MetricCell label="RSI-14"    value={result.mom?.rsi??'N/A'}/>
@@ -558,6 +618,74 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
             <MetricCell label="Asset Turn" value={data.metrics?.assetTurnover!=null?`${data.metrics.assetTurnover.toFixed(2)}×`:'N/A'}/>
             <MetricCell label="Short Float" value={data.sharesFloat?.freeFloat!=null?`${data.sharesFloat.freeFloat.toFixed(1)}%`:'N/A'}/>
           </div>
+
+          {/* ── Short Squeeze Meter ── */}
+          {(() => {
+            const _dc = data?.candles
+            const sf = data?.sharesFloat
+            const avgVol = Array.isArray(_dc?.volumes) && _dc.volumes.length >= 20
+              ? (_dc.volumes.slice(-20).reduce((a,b) => a+b, 0) / 20) : null
+            const floatShares = sf?.floatShares ?? null
+            const shortFloatPct = sf?.freeFloat ?? null
+            const shortShares = (shortFloatPct != null && floatShares != null)
+              ? (shortFloatPct / 100) * floatShares : null
+            const daysToCover = (shortShares != null && avgVol != null && avgVol > 0)
+              ? shortShares / avgVol : null
+            if (shortFloatPct == null) return null
+
+            let sqScore = 0
+            const sqReasons = []
+            if (shortFloatPct >= 30)      { sqScore += 45; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — extreme`) }
+            else if (shortFloatPct >= 20) { sqScore += 35; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — very high`) }
+            else if (shortFloatPct >= 10) { sqScore += 20; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — elevated`) }
+            else if (shortFloatPct >= 5)  { sqScore += 10; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — moderate`) }
+            else                          { sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — low`) }
+
+            if (daysToCover != null) {
+              if (daysToCover >= 10)     { sqScore += 40; sqReasons.push(`${daysToCover.toFixed(1)} days to cover — critical`) }
+              else if (daysToCover >= 5) { sqScore += 25; sqReasons.push(`${daysToCover.toFixed(1)} days to cover — high`) }
+              else if (daysToCover >= 2) { sqScore += 10; sqReasons.push(`${daysToCover.toFixed(1)} days to cover — moderate`) }
+              else                       { sqReasons.push(`${daysToCover.toFixed(1)} days to cover — low`) }
+            }
+            const mom1m = Array.isArray(_dc?.closes) && _dc.closes.length >= 21 && price
+              ? (price / _dc.closes[_dc.closes.length - 21] - 1) * 100 : null
+            if (mom1m != null && mom1m >= 20) { sqScore += 15; sqReasons.push(`+${mom1m.toFixed(0)}% 1-month — potential squeeze in progress`) }
+            sqScore = Math.min(100, sqScore)
+            const sqLabel = sqScore >= 70 ? 'HIGH RISK' : sqScore >= 40 ? 'MODERATE' : 'LOW'
+            const sqColor = sqScore >= 70 ? '#FF5000' : sqScore >= 40 ? '#FFD700' : '#00C805'
+            return (
+              <div style={{ background:'#111', border:'1px solid #252525', borderLeft:`3px solid ${sqColor}`, borderRadius:12, padding:'14px 16px', marginBottom:14 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                  <div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#B2B2B2', letterSpacing:1.5, textTransform:'uppercase', marginBottom:2 }}>🔥 Short Squeeze Meter</div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color:sqColor, fontWeight:700 }}>{sqLabel}</div>
+                  </div>
+                  <div style={{ fontFamily:'var(--font-display)', fontSize:'1.6rem', fontWeight:800, color:sqColor }}>{sqScore}</div>
+                </div>
+                <div style={{ height:6, background:'#222', borderRadius:3, overflow:'hidden', marginBottom:10 }}>
+                  <div style={{ height:'100%', width:`${sqScore}%`, background:sqColor, borderRadius:3, transition:'width 0.6s ease' }} />
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:8 }}>
+                  {[
+                    ['Short Float', shortFloatPct != null ? `${shortFloatPct.toFixed(1)}%` : 'N/A'],
+                    ['Days to Cover', daysToCover != null ? daysToCover.toFixed(1) : 'N/A'],
+                    ['Float Shares', floatShares != null ? (floatShares/1e6).toFixed(1)+'M' : 'N/A'],
+                  ].map(([l,v]) => (
+                    <div key={l} style={{ background:'rgba(255,255,255,0.03)', borderRadius:8, padding:'7px 10px', textAlign:'center' }}>
+                      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#B2B2B2', marginBottom:2 }}>{l}</div>
+                      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.76rem', color:'#fff', fontWeight:600 }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                {sqReasons.map((r, i) => (
+                  <div key={i} style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#B2B2B2', padding:'2px 0' }}>· {r}</div>
+                ))}
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#444', marginTop:8 }}>
+                  Score: short float % + days-to-cover + momentum. Not financial advice.
+                </div>
+              </div>
+            )
+          })()}
 
           {(av.forwardPE||av.targetPrice)&&(
             <><SectionHeader>Alpha Vantage Enriched</SectionHeader>
@@ -636,7 +764,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               return(<div className="card" key={i} style={{padding:'12px 16px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <div>
-                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.8rem'}}>{eq.period || eq.date?.slice(0,7) || `Q${i+1}`}</div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.8rem'}}>{eq.period || String(eq.date??'').slice(0,7) || `Q${i+1}`}</div>
                     <div style={{fontSize:'0.73rem',color:'#B2B2B2',marginTop:2}}>
                       Est ${eq.estimate?.toFixed(2) ?? '—'} · Actual ${eq.actual != null ? eq.actual.toFixed(2) : 'Pending'}
                     </div>
@@ -799,9 +927,9 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
 
           {/* Revenue Segments */}
           {data.revenueSegments?.segments?.length > 0 && (
-            <><SectionHeader>Revenue by Product · {data.revenueSegments.date?.slice(0,4)}</SectionHeader>
+            <><SectionHeader>Revenue by Product · {String(data.revenueSegments.date ?? "").slice(0,4)}</SectionHeader>
             <div className="card" style={{padding:'14px 16px'}}>
-              {data.revenueSegments.segments.map((seg, i) => (
+              {(Array.isArray(data.revenueSegments?.segments)?data.revenueSegments.segments:[]).map((seg, i) => (
                 <div key={i} style={{marginBottom: i < data.revenueSegments.segments.length - 1 ? 10 : 0}}>
                   <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
                     <div style={{fontSize:'0.76rem',color:'#fff'}}>{seg.name}</div>
@@ -818,14 +946,14 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           )}
 
           {/* Growth Trends */}
-          {data.incomeGrowth?.length > 0 && (
+          {Array.isArray(data.incomeGrowth) && data.incomeGrowth.length > 0 && (
             <><SectionHeader>Growth Trends (YoY)</SectionHeader>
             <div className="card" style={{padding:'14px 16px'}}>
               <div style={{display:'grid',gridTemplateColumns:'auto repeat(3,1fr)',gap:'6px 10px',alignItems:'center'}}>
                 <div style={{fontSize:'0.6rem',color:'#555'}}></div>
                 {data.incomeGrowth.map((r,i) => (
                   <div key={i} style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:'#888',textAlign:'center'}}>
-                    {r.date?.slice(0,4)||`Y-${i+1}`}
+                    {String(r.date??'').slice(0,4)||`Y-${i+1}`}
                   </div>
                 ))}
                 {[
@@ -853,7 +981,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           )}
 
           {/* Dividend History */}
-          {data.dividends?.length > 0 && (
+          {Array.isArray(data.dividends) && data.dividends.length > 0 && (
             <><SectionHeader>Dividend History</SectionHeader>
             <div className="card" style={{padding:'0 16px'}}>
               {data.dividends.map((d, i) => (

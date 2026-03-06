@@ -5,9 +5,11 @@ function getKey(name) {
   try { return localStorage.getItem(name) || import.meta.env[name] || '' } catch { return import.meta.env[name] || '' }
 }
 
-let FH_KEY  = () => getKey('VITE_FINNHUB_KEY')
-let AV_KEY  = () => getKey('VITE_AV_KEY')
-let FMP_KEY = () => getKey('VITE_FMP_KEY')
+let FH_KEY      = () => getKey('VITE_FINNHUB_KEY')
+let AV_KEY      = () => getKey('VITE_AV_KEY')
+let FMP_KEY     = () => getKey('VITE_FMP_KEY')
+let TRADIER_KEY  = () => getKey('VITE_TRADIER_KEY')  // kept for fallback compat
+let POLYGON_KEY  = () => getKey('VITE_POLYGON_KEY')
 
 export function hasKeys() {
   const fh  = FH_KEY()
@@ -16,6 +18,7 @@ export function hasKeys() {
     fh:  fh.length  > 8 && !fh.includes('your_'),
     av:  AV_KEY().length > 8,
     fmp: fmp.length > 8 && !fmp.includes('your_'),
+    polygon: POLYGON_KEY().length > 8,
   }
 }
 
@@ -48,61 +51,83 @@ async function go(url, retries = 1) {
   return null
 }
 
-/* ── Finnhub ── */
+/* ── Finnhub — routed through /api/proxy (key stays server-side) ── */
 async function fh(path, ttl = 30000) {
+  // If running locally with key in localStorage, use direct call
   const key = FH_KEY()
-  if (!key || key.length < 8) return null
-  const url = `https://finnhub.io/api/v1${path}&token=${key}`
+  const useProxy = !key || key.length < 8
+  const url = useProxy
+    ? `/api/proxy?provider=finnhub&path=${encodeURIComponent(path)}`
+    : `https://finnhub.io/api/v1${path}&token=${key}`
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url, 1)
   if (data !== null) cSet(url, data)
   return data
 }
 
-/* ── Alpha Vantage ── */
+/* ── Alpha Vantage — routed through /api/proxy ── */
 async function av(params, ttl = 3600000) {
   const key = AV_KEY()
-  if (!key || key.length < 8) return null
-  const qs   = new URLSearchParams({ ...params, apikey: key })
-  const url  = `https://www.alphavantage.co/query?${qs}`
-  const hit  = cGet(url, ttl); if (hit !== null) return hit
+  const useProxy = !key || key.length < 8
+  let url
+  if (useProxy) {
+    const { apikey, ...rest } = params
+    const qs = new URLSearchParams(rest)
+    url = `/api/proxy?provider=av&path=${encodeURIComponent('?' + qs.toString())}`
+  } else {
+    const qs = new URLSearchParams({ ...params, apikey: key })
+    url = `https://www.alphavantage.co/query?${qs}`
+  }
+  const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (!data || data.Information || data.Note) return null
   cSet(url, data); return data
 }
 
-/* ── FMP stable (modern endpoints) ── */
+/* ── FMP stable — routed through /api/proxy (key stays server-side) ── */
 async function fmp(path, ttl = 300000) {
   const key = FMP_KEY()
-  if (!key || key.length < 8) return null
-  const sep = path.includes('?') ? '&' : '?'
-  const url = `https://financialmodelingprep.com/stable${path}${sep}apikey=${key}`
+  const useProxy = !key || key.length < 8
+  const url = useProxy
+    ? `/api/proxy?provider=fmp&path=${encodeURIComponent(path)}`
+    : (() => { const sep = path.includes('?') ? '&' : '?'; return `https://financialmodelingprep.com/stable${path}${sep}apikey=${key}` })()
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (data !== null) cSet(url, data)
   return data
 }
 
-/* ── FMP v3 (legacy endpoints: score, rating, dcf, transcripts, esg) ── */
+/* ── FMP v3 — routed through /api/proxy ── */
 async function fmpv3(path, ttl = 300000) {
   const key = FMP_KEY()
-  if (!key || key.length < 8) return null
-  const sep = path.includes('?') ? '&' : '?'
-  const url = `https://financialmodelingprep.com/api/v3${path}${sep}apikey=${key}`
+  const useProxy = !key || key.length < 8
+  const url = useProxy
+    ? `/api/proxy?provider=fmp_v3&path=${encodeURIComponent(path)}`
+    : (() => { const sep = path.includes('?') ? '&' : '?'; return `https://financialmodelingprep.com/api/v3${path}${sep}apikey=${key}` })()
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (data !== null) cSet(url, data)
   return data
 }
 
-/* ── FMP v4 (insider trading, congressional) ── */
+/* ── FMP v4 — routed through /api/proxy ── */
 async function fmpv4(path, ttl = 300000) {
   const key = FMP_KEY()
-  if (!key || key.length < 8) return null
-  const sep = path.includes('?') ? '&' : '?'
-  const url = `https://financialmodelingprep.com/api/v4${path}${sep}apikey=${key}`
+  const useProxy = !key || key.length < 8
+  const url = useProxy
+    ? `/api/proxy?provider=fmp_v4&path=${encodeURIComponent(path)}`
+    : (() => { const sep = path.includes('?') ? '&' : '?'; return `https://financialmodelingprep.com/api/v4${path}${sep}apikey=${key}` })()
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
+  if (data !== null) cSet(url, data)
+  return data
+}
+
+/* ── Polygon.io — routed through /api/proxy (key stays server-side) ── */
+async function polygon(path, ttl = 60000) {
+  const url = `/api/proxy?provider=polygon&path=${encodeURIComponent(path)}`
+  const hit = cGet(url, ttl); if (hit !== null) return hit
+  const data = await go(url, 1)
   if (data !== null) cSet(url, data)
   return data
 }
@@ -159,16 +184,20 @@ export async function fetchCandles(ticker, days = 260) {
       const opens     = sorted.map(c => c.open)
       const volumes   = sorted.map(c => c.volume || 0)
       const timestamps = sorted.map(c => Math.floor(new Date(c.date).getTime() / 1000))
-      let ma50 = null, ma200 = null
+      let ma50 = null, ma200 = null, ma200Partial = false
       if (closes.length >= 50) {
         const sl = closes.slice(-50)
         ma50 = parseFloat((sl.reduce((a, b) => a + b, 0) / 50).toFixed(2))
       }
-      if (closes.length >= 100) {
+      if (closes.length >= 200) {
         const sl = closes.slice(-200)
-        ma200 = parseFloat((sl.reduce((a, b) => a + b, 0) / sl.length).toFixed(2))
+        ma200 = parseFloat((sl.reduce((a, b) => a + b, 0) / 200).toFixed(2))
+      } else if (closes.length >= 100) {
+        // Partial MA200 — less reliable, flag for display
+        ma200 = parseFloat((closes.reduce((a, b) => a + b, 0) / closes.length).toFixed(2))
+        ma200Partial = true
       }
-      return { closes, highs, lows, opens, volumes, timestamps, ma50, ma200, source: 'fmp' }
+      return { closes, highs, lows, opens, volumes, timestamps, ma50, ma200, ma200Partial, source: 'fmp' }
     }
   }
   // Finnhub fallback
@@ -176,17 +205,20 @@ export async function fetchCandles(ticker, days = 260) {
   const to   = Math.floor(Date.now() / 1000)
   const d    = await fh(`/stock/candle?symbol=${ticker}&resolution=D&from=${from}&to=${to}`, 600000)
   if (!d || d.s === 'no_data' || !d.c?.length) return null
-  let ma50 = null, ma200 = null
+  let ma50 = null, ma200 = null, ma200Partial = false
   if (d.c.length >= 50) {
     const sl = d.c.slice(-50)
     ma50 = parseFloat((sl.reduce((a, b) => a + b, 0) / 50).toFixed(2))
   }
-  if (d.c.length >= 100) {
+  if (d.c.length >= 200) {
     const sl = d.c.slice(-200)
-    ma200 = parseFloat((sl.reduce((a, b) => a + b, 0) / sl.length).toFixed(2))
+    ma200 = parseFloat((sl.reduce((a, b) => a + b, 0) / 200).toFixed(2))
+  } else if (d.c.length >= 100) {
+    ma200 = parseFloat((d.c.reduce((a, b) => a + b, 0) / d.c.length).toFixed(2))
+    ma200Partial = true
   }
   const _arr = v => Array.isArray(v) ? v : []
-  return { closes: _arr(d.c), highs: _arr(d.h), lows: _arr(d.l), opens: _arr(d.o || d.c), volumes: _arr(d.v), timestamps: _arr(d.t), ma50, ma200, source: 'finnhub' }
+  return { closes: _arr(d.c), highs: _arr(d.h), lows: _arr(d.l), opens: _arr(d.o || d.c), volumes: _arr(d.v), timestamps: _arr(d.t), ma50, ma200, ma200Partial, source: 'finnhub' }
 }
 
 /* ══════════════════════════════════════════
@@ -238,7 +270,7 @@ export async function fetchMetrics(ticker) {
       // Dividend yield — use ratios TTM first, fallback to lastDiv/price
       const divYield = r?.dividendYieldTTM
         ? parseFloat((r.dividendYieldTTM * 100).toFixed(2))
-        : ((p.lastDividend || p.lastDiv) && p.price ? parseFloat(((p.lastDividend || p.lastDiv) / p.price * 100).toFixed(2)) : null)
+        : ((p.lastDividend || p.lastDiv) && p.price ? parseFloat(((p.lastDividend || p.lastDiv) * 4 / p.price * 100).toFixed(2)) : null)
       // Extract additional ratios from ratios-ttm
       const evEbitda       = r?.enterpriseValueMultipleTTM || null
       const priceToFCF     = r?.priceToFreeCashFlowsRatioTTM || null
@@ -278,7 +310,7 @@ export async function fetchMetrics(ticker) {
           sector:       p.sector || null,
           description:  p.description || null,
           divYield,
-          targetPrice:  p.dcf || null,
+          targetPrice:  null,  // analyst target fetched separately via fetchPriceTarget
         },
         source: 'fmp'
       }
@@ -497,6 +529,63 @@ export async function fetchFMPScreener({ minMcap = 500, limit = 500 } = {}) {
     volume:  s.volume || 0,
     pe:      s.pe || null,
   }))
+}
+
+/* ══════════════════════════════════════════
+   DIVIDEND SCREENER — sorted by dividend yield descending
+   Uses FMP company-screener with dividendMoreThan filter
+══════════════════════════════════════════ */
+export async function fetchDividendScreener({ minYield = 0, limit = 100 } = {}) {
+  if (!FMP_KEY() || FMP_KEY().length < 8) return []
+  try {
+    const key = FMP_KEY()
+    // Use stable dividends-calendar via proxy (key stays server-side)
+    const now = new Date()
+    const from = now.toISOString().slice(0, 10)
+    const to = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10)
+    const apiPath = `/dividends-calendar?from=${from}&to=${to}`
+    const url = (!key || key.length < 8)
+      ? `/api/proxy?provider=fmp&path=${encodeURIComponent(apiPath)}`
+      : `https://financialmodelingprep.com/stable${apiPath}&apikey=${key}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('calendar failed')
+    const d = await res.json()
+    if (!Array.isArray(d) || !d.length) throw new Error('empty')
+    // Deduplicate by ticker (calendar may have multiple entries), keep highest yield
+    const seen = {}
+    for (const r of d) {
+      const ticker = r.symbol
+      if (!ticker) continue
+      // dividends-calendar returns yield already as percentage (e.g. 4.5 = 4.5%)
+      // but some entries return it as decimal (e.g. 0.045) — detect and normalize
+      const rawYield = r.yield ?? r.dividendYield ?? null
+      const yieldPct = rawYield != null
+        ? parseFloat((rawYield > 1 ? rawYield : rawYield * 100).toFixed(2))
+        : null
+      if (!yieldPct || yieldPct <= 0) continue
+      if (!seen[ticker] || yieldPct > seen[ticker].divYield) {
+        seen[ticker] = {
+          ticker,
+          name:        r.name || r.companyName || ticker,
+          sector:      r.sector || 'Unknown',
+          price:       r.price || r.adjDividend || 0,
+          mcap:        r.marketCap || 0,
+          divYield:    yieldPct,
+          dividend:    r.dividend || r.adjDividend || null,
+          exDivDate:   r.date || r.exDividendDate || null,
+          paymentDate: r.paymentDate || null,
+          frequency:   r.frequency || null,
+          pe:          r.pe || null,
+        }
+      }
+    }
+    return Object.values(seen)
+      .filter(s => s.divYield >= minYield)
+      .sort((a, b) => (b.divYield || 0) - (a.divYield || 0))
+      .slice(0, limit)
+  } catch {
+    return []
+  }
 }
 
 /* ══════════════════════════════════════════
@@ -750,24 +839,13 @@ export async function fetchScore(ticker) {
    FMP COMPANY RATING (S+ to D)
 ══════════════════════════════════════════ */
 export async function fetchRating(ticker) {
-  return null  // endpoint not available on current FMP plan
-  if (!hasKeys().fmp) return null
-  try {
-    const d = await fmp(`/company-rating?symbol=${ticker}`, 3600000)
-    const r = Array.isArray(d) ? d[0] : d
-    if (!r) return null
-    return {
-      rating:            r.rating || null,
-      ratingScore:       r.ratingScore ?? r.score ?? null,
-      ratingRecommendation: r.ratingRecommendation || r.recommendation || null,
-      dcfScore:          r.ratingDetailsDCFScore ?? r.dcfScore ?? null,
-      roeScore:          r.ratingDetailsROEScore ?? r.roeScore ?? null,
-      roaScore:          r.ratingDetailsROAScore ?? r.roaScore ?? null,
-      deScore:           r.ratingDetailsDEScore  ?? r.deScore  ?? null,
-      peScore:           r.ratingDetailsPEScore  ?? r.peScore  ?? null,
-      pbScore:           r.ratingDetailsPBScore  ?? r.pbScore  ?? null,
-    }
-  } catch { return null }
+  // FMP /company-rating not available on current plan — returns null
+  // Implementation preserved below for when plan is upgraded:
+  // const d = await fmp(`/company-rating?symbol=${ticker}`, 3600000)
+  // const r = Array.isArray(d) ? d[0] : d
+  // if (!r) return null
+  // return { rating: r.rating, ratingScore: r.ratingScore ?? r.score ?? null, ... }
+  return null
 }
 
 /* ══════════════════════════════════════════
@@ -871,21 +949,13 @@ export async function fetchOwnerEarnings(ticker) {
    ESG SCORES
 ══════════════════════════════════════════ */
 export async function fetchESG(ticker) {
-  return null  // ESG endpoint requires FMP paid plan (402) — disabled to avoid noise
-  if (!hasKeys().fmp) return null
-  try {
-    const d = await fmp(`/esg-disclosures?symbol=${ticker}`, 86400000)
-    const r = Array.isArray(d) ? d[0] : d
-    if (!r) return null
-    return {
-      esgScore:        r.ESGScore ?? r.esgScore ?? null,
-      environmentScore: r.environmentalScore ?? r.environmentScore ?? null,
-      socialScore:     r.socialScore ?? null,
-      governanceScore: r.governanceScore ?? null,
-      rating:          r.ESGRating ?? r.esgRating ?? null,
-      year:            r.year || null,
-    }
-  } catch { return null }
+  // FMP /esg-disclosures requires paid plan (returns 402) — disabled to avoid noise
+  // Implementation preserved below for when plan is upgraded:
+  // const d = await fmp(`/esg-disclosures?symbol=${ticker}`, 86400000)
+  // const r = Array.isArray(d) ? d[0] : d
+  // if (!r) return null
+  // return { esgScore: r.ESGScore ?? r.esgScore ?? null, environmentScore: ..., socialScore: ..., governanceScore: ..., rating: ..., year: ... }
+  return null
 }
 
 /* ══════════════════════════════════════════
@@ -1052,6 +1122,99 @@ export async function fetchMarketMovers() {
       changePct: r.changesPercentage || r.changePercentage || null,
     })) : []
     return { gainers: mapMovers(gainers), losers: mapMovers(losers) }
+  } catch { return null }
+}
+
+
+/* ══════════════════════════════════════════
+   REAL OPTIONS CHAIN — via Polygon.io free API
+   Returns expiry dates + full chain for one expiry
+   Requires POLYGON_KEY in Vercel env vars (no VITE_ prefix)
+   Free tier: 15-min delayed, unlimited calls
+══════════════════════════════════════════ */
+export async function fetchOptionsExpirations(ticker) {
+  if (!hasKeys().polygon) return []
+  try {
+    // Polygon: GET /v3/reference/options/contracts?underlying_ticker=AAPL&expired=false&limit=50
+    const d = await polygon(`/v3/reference/options/contracts?underlying_ticker=${ticker}&expired=false&limit=200`, 3600000)
+    if (!d?.results?.length) return []
+    // Extract unique expiry dates, sorted ascending
+    const dates = [...new Set(d.results.map(c => c.expiration_date))].sort()
+    return dates.slice(0, 12) // next 12 expiries
+  } catch { return [] }
+}
+
+export async function fetchOptionsChain(ticker, expiration) {
+  if (!expiration || !hasKeys().polygon) return null
+  try {
+    // Polygon snapshot: GET /v3/snapshot/options/{underlyingAsset}?expiration_date=YYYY-MM-DD&limit=250
+    const d = await polygon(`/v3/snapshot/options/${ticker}?expiration_date=${expiration}&limit=250`, 60000)
+    if (!d?.results?.length) return null
+
+    return d.results.map(o => {
+      const det  = o.details   || {}
+      const day  = o.day       || {}
+      const greeks = o.greeks  || {}
+      const iv   = o.implied_volatility
+      return {
+        symbol:     det.ticker,
+        type:       det.contract_type,           // 'call' | 'put'
+        strike:     det.strike_price,
+        expiration: det.expiration_date,
+        bid:        o.last_quote?.bid   ?? null,
+        ask:        o.last_quote?.ask   ?? null,
+        last:       o.last_trade?.price ?? day.close ?? null,
+        volume:     day.volume          ?? null,
+        oi:         o.open_interest     ?? null,
+        iv:         iv != null ? Math.round(iv * 100) : null,
+        delta:      greeks.delta  != null ? +greeks.delta.toFixed(3)  : null,
+        gamma:      greeks.gamma  != null ? +greeks.gamma.toFixed(4)  : null,
+        theta:      greeks.theta  != null ? +greeks.theta.toFixed(3)  : null,
+        vega:       greeks.vega   != null ? +greeks.vega.toFixed(3)   : null,
+        midpoint:   (o.last_quote?.bid != null && o.last_quote?.ask != null)
+                      ? +((o.last_quote.bid + o.last_quote.ask) / 2).toFixed(2)
+                      : null,
+      }
+    })
+  } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   UNUSUAL OPTIONS FLOW — FMP /stable/options
+   Flags contracts where Vol/OI >= 2x AND volume >= 500
+   Sorted by Vol/OI ratio descending
+══════════════════════════════════════════ */
+export async function fetchUnusualFlow(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const d = await fmp(`/options?symbol=${ticker}`, 120000)
+    // FMP returns array of option contracts
+    const arr = Array.isArray(d) ? d : (d?.optionChain ? d.optionChain : [])
+    if (!arr.length) return null
+
+    const contracts = arr.map(o => {
+      const vol = o.volume || o.vol || 0
+      const oi  = o.openInterest || o.oi || 1
+      const ratio = oi > 0 ? +(vol / oi).toFixed(2) : 0
+      return {
+        type:       (o.callPut || o.optionType || '').toLowerCase().includes('c') ? 'call' : 'put',
+        strike:     o.strike || o.strikePrice,
+        expiry:     o.expirtyDate || o.expirationDate || o.expiry,
+        volume:     vol,
+        oi,
+        ratio,
+        iv:         o.impliedVolatility ? Math.round(o.impliedVolatility * 100) : null,
+        last:       o.lastPrice || o.last,
+        inTheMoney: o.inTheMoney || false,
+      }
+    })
+    // Unusual = Vol/OI >= 2 AND volume >= 500
+    const unusual = contracts
+      .filter(c => c.ratio >= 2 && c.volume >= 500)
+      .sort((a, b) => b.ratio - a.ratio)
+      .slice(0, 20)
+
+    return unusual.length ? unusual : null
   } catch { return null }
 }
 

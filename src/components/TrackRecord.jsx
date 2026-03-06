@@ -214,7 +214,23 @@ export default function TrackRecord() {
       </div>
 
       {/* Best/Worst */}
-      {stats.best && (
+      {stats.hypotheticalPnL != null && (
+          <div style={{ background: stats.hypotheticalPnL >= 0 ? 'rgba(0,200,5,0.06)' : 'rgba(255,80,0,0.06)', border: `1px solid ${stats.hypotheticalPnL >= 0 ? '#00C80530' : '#FF500030'}`, borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: '#666', letterSpacing: '0.5px', marginBottom: 6 }}>HYPOTHETICAL P&L — $1,000 per BUY signal ({stats.hypotheticalCalls} calls)</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem', fontWeight: 800, color: stats.hypotheticalPnL >= 0 ? GREEN : RED }}>
+                {stats.hypotheticalPnL >= 0 ? '+' : ''}{stats.hypotheticalPnL >= 0 ? '$' : '-$'}{Math.abs(stats.hypotheticalPnL).toLocaleString()}
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: stats.hypotheticalPnL >= 0 ? GREEN : RED, fontWeight: 700 }}>
+                {stats.hypotheticalPct >= 0 ? '+' : ''}{stats.hypotheticalPct}%
+              </div>
+            </div>
+            <div style={{ fontSize: '0.68rem', color: '#666', marginTop: 4 }}>
+              ${stats.hypotheticalInvested?.toLocaleString()} invested · 30-day returns · past performance ≠ future results
+            </div>
+          </div>
+        )}
+        {stats.best && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           <div style={{ flex: 1, background: 'rgba(0,200,5,0.06)', border: '1px solid rgba(0,200,5,0.2)', borderRadius: 10, padding: '10px 14px' }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: GREEN, marginBottom: 4 }}>BEST CALL</div>

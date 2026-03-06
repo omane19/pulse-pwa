@@ -11,29 +11,35 @@ export default function DCA() {
   const [annReturn, setAnnReturn] = useState(10)
   const [startPrice,setStartPrice]= useState(180)
   const [lumpSum,   setLumpSum]   = useState(false)
+  const [divYield,  setDivYield]  = useState(1.5)
+  const [drip,      setDrip]      = useState(false)
 
   const result = useMemo(() => {
     const monthlyRate = annReturn / 100 / 12
+    const monthlyDivRate = drip ? (divYield / 100 / 12) : 0
     const rows = []
-    let totalInvested = 0; let portfolioValue = 0; let lsValue = 0
+    let totalInvested = 0; let portfolioValue = 0; let lsValue = 0; let dripValue = 0
     const lsTotal = monthly * months
-    lsValue = lsTotal * Math.pow(1 + annReturn/100/12, months)
+    lsValue = lsTotal * Math.pow(1 + annReturn/100/12, months + 1)  // +1: invested at month 0, compounds full duration
 
+    // DRIP simulation: reinvest dividends monthly
+    let dripPortfolio = 0
     for (let m = 1; m <= months; m++) {
       totalInvested += monthly
-      // Each contribution grows for remaining months
-      portfolioValue = 0
-      let running = 0
-      for (let k = 1; k <= m; k++) {
-        running += monthly * Math.pow(1 + monthlyRate, m - k + 1)
-      }
-      portfolioValue = running
-      const shares = totalInvested / startPrice  // approx shares bought
+      // Standard DCA: Future Value of annuity formula (O(1) vs O(n²))
+      // FV = PMT * ((1+r)^n - 1) / r  — mathematically identical to the loop
+      portfolioValue = monthlyRate > 0
+        ? monthly * (Math.pow(1 + monthlyRate, m) - 1) / monthlyRate * (1 + monthlyRate)
+        : monthly * m
+      // DRIP: extra value from dividend reinvestment on top of normal DCA growth
+      // Only the incremental gain from reinvesting dividends, not re-compounding portfolio
+      dripPortfolio = portfolioValue * (Math.pow(1 + monthlyDivRate, m) - 1) + portfolioValue
       rows.push({
         month: m,
-        label: m % 3 === 0 ? `M${m}` : '',
+        label: m % 3 === 0 ? \`M\${m}\` : '',
         invested: Math.round(totalInvested),
         value: Math.round(portfolioValue),
+        drip: drip ? Math.round(dripPortfolio) : null,
         gain: Math.round(portfolioValue - totalInvested),
         gainPct: parseFloat(((portfolioValue / totalInvested - 1)*100).toFixed(1)),
       })
@@ -41,8 +47,12 @@ export default function DCA() {
 
     const final = rows[rows.length - 1]
     const totalInv = monthly * months
-    return { rows, totalInvested: totalInv, finalValue: final.value, totalGain: final.gain, gainPct: final.gainPct, lsValue: Math.round(lsValue), lsGain: Math.round(lsValue - lsTotal) }
-  }, [monthly, months, annReturn, startPrice])
+    const dripGain = drip ? Math.round(dripPortfolio - totalInv) : null
+    const dripBonus = drip ? Math.round(dripPortfolio - portfolioValue) : null
+    return { rows, totalInvested: totalInv, finalValue: final.value, totalGain: final.gain, gainPct: final.gainPct,
+      lsValue: Math.round(lsValue), lsGain: Math.round(lsValue - lsTotal),
+      dripFinal: drip ? Math.round(dripPortfolio) : null, dripGain, dripBonus }
+  }, [monthly, months, annReturn, startPrice, divYield, drip])
 
   const milestones = [
     { label: 'Break Even', value: result.totalInvested },
@@ -81,6 +91,25 @@ export default function DCA() {
           <input type="number" className="input" value={startPrice} min={1} step={1}
             onChange={e=>setStartPrice(Math.max(1,+e.target.value))} />
         </div>
+        <div style={{ gridColumn:'1/-1' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <label className="input-label" style={{ margin:0 }}>Dividend Reinvestment (DRIP)</label>
+            <button onClick={() => setDrip(v => !v)}
+              style={{ background: drip ? 'rgba(0,200,5,0.15)' : '#1a1a1a', border: `1px solid ${drip ? '#00C805' : '#333'}`,
+                color: drip ? GREEN : '#666', borderRadius: 20, padding: '4px 14px', fontFamily:'var(--font-mono)', fontSize:'0.7rem', cursor:'pointer' }}>
+              {drip ? '✓ ON' : 'OFF'}
+            </button>
+          </div>
+          {drip && (
+            <div>
+              <label className="input-label">Dividend Yield (%/year)</label>
+              <input type="range" min={0.5} max={8} step={0.5} value={divYield}
+                onChange={e => setDivYield(+e.target.value)}
+                style={{ width:'100%', accentColor:GREEN, marginTop:4 }} />
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.76rem', color:GREEN, marginTop:4 }}>{divYield}% yield · dividends reinvested monthly</div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -100,6 +129,24 @@ export default function DCA() {
         ))}
       </div>
 
+      {/* DRIP bonus card */}
+      {drip && result.dripBonus != null && (
+        <div style={{ background:'rgba(0,200,5,0.06)', border:'1px solid rgba(0,200,5,0.25)', borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:GREEN, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>DRIP Bonus — Dividends Reinvested</div>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div>
+              <div style={{ fontSize:'0.72rem', color:'#B2B2B2' }}>Without DRIP</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'1rem', color:'#fff' }}>${result.finalValue.toLocaleString()}</div>
+            </div>
+            <div style={{ fontFamily:'var(--font-mono)', color:'#444', fontSize:'1.2rem' }}>→</div>
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontSize:'0.72rem', color:'#B2B2B2' }}>With DRIP ({divYield}% yield)</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'1rem', color:GREEN }}>${result.dripFinal?.toLocaleString()}</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color:GREEN }}>+${result.dripBonus.toLocaleString()} extra from dividends</div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* DCA vs Lump Sum comparison */}
       <div className="card card-accent-cyan" style={{ marginBottom:16 }}>
         <div style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', color:CYAN, marginBottom:10 }}>DCA vs Lump Sum Comparison</div>
@@ -134,6 +181,7 @@ export default function DCA() {
           <Legend wrapperStyle={{ fontFamily:'var(--font-mono)', fontSize:'0.65rem', paddingTop:6 }} />
           <Line type="monotone" dataKey="value"    name="Portfolio Value" stroke={GREEN} strokeWidth={2} dot={false} />
           <Line type="monotone" dataKey="invested" name="Amount Invested"  stroke={CYAN}  strokeWidth={1.5} dot={false} strokeDasharray="5 3" />
+          {drip && <Line type="monotone" dataKey="drip" name="With DRIP" stroke="#FFD700" strokeWidth={2} dot={false} />}
         </LineChart>
       </ResponsiveContainer>
 

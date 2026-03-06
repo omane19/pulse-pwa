@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { marketStatus } from './utils/scoring.js'
 import DeepDive from './components/DeepDive.jsx'
 import Watchlist from './components/Watchlist.jsx'
@@ -7,9 +7,9 @@ import GlobalImpact from './components/GlobalImpact.jsx'
 import Options from './components/Options.jsx'
 import Compare from './components/Compare.jsx'
 import Learn from './components/Learn.jsx'
-import Setup from './components/Setup.jsx'
 import SmartMoney from './components/SmartMoney.jsx'
 import TrackRecord from './components/TrackRecord.jsx'
+import Portfolio from './components/Portfolio.jsx'
 import Onboarding from './components/Onboarding.jsx'
 
 /* ── Icons ── */
@@ -37,13 +37,13 @@ function IconLearn({ active }) {
 function IconMoney({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>)
 }
-function IconSetup({ active }) {
-  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>)
-}
-
 function IconTrack({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>)
 }
+function IconPortfolio({ active }) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>)
+}
+
 function checkOnboarded() {
   try { return localStorage.getItem('pulse_onboarded') === '1' } catch { return false }
 }
@@ -52,16 +52,16 @@ function markOnboarded() {
 }
 
 const TABS = [
-  { id:'dive',    label:'Dive',    icon:IconDive },
-  { id:'watch',   label:'Watch',   icon:IconWatch },
-  { id:'screen',  label:'Screen',  icon:IconScreen },
-  { id:'options', label:'Options', icon:IconOptions },
-  { id:'money',   label:'Money',   icon:IconMoney },
-  { id:'compare', label:'VS',      icon:IconCompare },
-  { id:'global',  label:'Global',  icon:IconGlobal },
-  { id:'learn',   label:'Learn',   icon:IconLearn },
-  { id:'track',   label:'Track',   icon:IconTrack },
-  { id:'setup',   label:'Setup',   icon:IconSetup },
+  { id:'dive',      label:'Dive',      icon:IconDive },
+  { id:'watch',     label:'Watch',     icon:IconWatch },
+  { id:'screen',    label:'Screen',    icon:IconScreen },
+  { id:'options',   label:'Options',   icon:IconOptions },
+  { id:'money',     label:'Money',     icon:IconMoney },
+  { id:'compare',   label:'VS',        icon:IconCompare },
+  { id:'global',    label:'Global',    icon:IconGlobal },
+  { id:'learn',     label:'Learn',     icon:IconLearn },
+  { id:'track',     label:'Track',     icon:IconTrack },
+  { id:'portfolio', label:'Portfolio', icon:IconPortfolio },
 ]
 
 export default function App() {
@@ -69,13 +69,22 @@ export default function App() {
   const [diveQuery, setDiveQuery] = useState({ ticker: '', version: 0 })
   const [showOnboarding, setShowOnboarding] = useState(() => !checkOnboarded())
   const [mkt, setMkt] = useState(() => marketStatus())
+
   useEffect(() => {
-    // Refresh market status every minute
     const id = setInterval(() => setMkt(marketStatus()), 60000)
     return () => clearInterval(id)
   }, [])
 
-  const navigateToDive = (ticker) => { setDiveQuery(prev => ({ ticker: ticker.toUpperCase(), version: prev.version + 1 })); setActiveTab('dive') }
+  // Auto-skip setup — proxy handles keys on Vercel
+  useEffect(() => {
+    // Silently confirm proxy is live; no setup tab needed
+    fetch('/api/proxy?provider=fmp&path=%2Fprofile%3Fsymbol%3DAAPL').catch(() => {})
+  }, [])
+
+  const navigateToDive = (ticker) => {
+    setDiveQuery(prev => ({ ticker: ticker.toUpperCase(), version: prev.version + 1 }))
+    setActiveTab('dive')
+  }
   const doneOnboarding = () => { markOnboarded(); setShowOnboarding(false) }
 
   return (
@@ -98,16 +107,16 @@ export default function App() {
       </header>
 
       <main className="page-area">
-        {activeTab === 'dive'    && <DeepDive initialTicker={diveQuery.ticker} diveVersion={diveQuery.version} onNavigate={navigateToDive} />}
-        {activeTab === 'watch'   && <Watchlist onNavigateToDive={navigateToDive} />}
-        {activeTab === 'screen'  && <Screener onNavigateToDive={navigateToDive} />}
-        {activeTab === 'options' && <Options />}
-        {activeTab === 'money'   && <SmartMoney />}
-        {activeTab === 'compare' && <Compare />}
-        {activeTab === 'global'  && <GlobalImpact onNavigate={navigateToDive} />}
-        {activeTab === 'learn'   && <Learn />}
-        {activeTab === 'track'   && <TrackRecord />}
-        {activeTab === 'setup'   && <Setup onDone={() => setActiveTab('dive')} />}
+        {activeTab === 'dive'      && <DeepDive initialTicker={diveQuery.ticker} diveVersion={diveQuery.version} onNavigate={navigateToDive} />}
+        {activeTab === 'watch'     && <Watchlist onNavigateToDive={navigateToDive} />}
+        {activeTab === 'screen'    && <Screener onNavigateToDive={navigateToDive} />}
+        {activeTab === 'options'   && <Options onNavigateToDive={navigateToDive} />}
+        {activeTab === 'money'     && <SmartMoney onNavigateToDive={navigateToDive} />}
+        {activeTab === 'compare'   && <Compare />}
+        {activeTab === 'global'    && <GlobalImpact onNavigate={navigateToDive} />}
+        {activeTab === 'learn'     && <Learn />}
+        {activeTab === 'track'     && <TrackRecord />}
+        {activeTab === 'portfolio' && <Portfolio onNavigateToDive={navigateToDive} />}
       </main>
 
       <nav className="bottom-nav">

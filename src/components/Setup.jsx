@@ -17,14 +17,23 @@ export default function Setup({ onDone }) {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    const fh  = getKey('VITE_FINNHUB_KEY')
-    const av  = getKey('VITE_AV_KEY')
-    const fmp = getKey('VITE_FMP_KEY')
-    // Auto-skip Setup if key already configured
-    if (validateKey(fh)) { onDone(); return }
-    if (fh)  setFhInput(fh)
-    if (av)  setAvInput(av)
-    if (fmp) setFmpInput(fmp)
+    // If running on Vercel with server-side proxy, keys are already configured
+    // Check by pinging the proxy — if it returns data, skip Setup
+    const checkProxy = async () => {
+      try {
+        const r = await fetch('/api/proxy?provider=fmp&path=%2Fprofile%3Fsymbol%3DAAPL')
+        if (r.ok) { onDone(); return }
+      } catch {}
+      // Fallback: check localStorage keys
+      const fh  = getKey('VITE_FINNHUB_KEY')
+      const av  = getKey('VITE_AV_KEY')
+      const fmp = getKey('VITE_FMP_KEY')
+      if (validateKey(fh) || validateKey(fmp)) { onDone(); return }
+      if (fh)  setFhInput(fh)
+      if (av)  setAvInput(av)
+      if (fmp) setFmpInput(fmp)
+    }
+    checkProxy()
   }, [])
 
   const fhOk  = validateKey(fhInput)
@@ -32,6 +41,8 @@ export default function Setup({ onDone }) {
   const fmpOk = validateKey(fmpInput)
 
   const save = () => {
+    // Store in localStorage for local dev only
+    // On Vercel, keys should be in Environment Variables (server-side, never exposed)
     if (fhInput.trim())  localStorage.setItem('VITE_FINNHUB_KEY', fhInput.trim())
     if (avInput.trim())  localStorage.setItem('VITE_AV_KEY', avInput.trim())
     if (fmpInput.trim()) localStorage.setItem('VITE_FMP_KEY', fmpInput.trim())
@@ -47,7 +58,8 @@ export default function Setup({ onDone }) {
           Setup PULSE
         </div>
         <div style={{ color: G1, fontSize: '0.82rem', maxWidth: 300, margin: '0 auto', lineHeight: 1.7 }}>
-          Paste your API keys below. Keys save to your browser — no server needed.
+          On Vercel: add keys as Environment Variables (server-side, never exposed).
+          For local dev: paste keys below.
         </div>
       </div>
 

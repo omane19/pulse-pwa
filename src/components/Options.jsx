@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { useTickerData } from '../hooks/useApi.js'
+import React, { useState, useEffect, useCallback } from 'react'
+import { useTickerData, fetchOptionsExpirations, fetchOptionsChain, fetchUnusualFlow, hasKeys } from '../hooks/useApi.js'
 import { scoreAsset } from '../utils/scoring.js'
 import { OPTIONS_STRATEGIES, TICKER_NAMES } from '../utils/constants.js'
 import { EarningsWarning, LoadingBar, SectionHeader, PullToRefresh } from './shared.jsx'
@@ -27,7 +27,7 @@ function calcStrikes(price, verdict, rsi) {
     const callStrike = round(price * 1.05)
     const spreadSell = round(price * 1.12)
     return {
-      primary: { name:'Long Call', strike:`$${callStrike}`, expiry:`${expStr} (${dte} DTE)`, cost:`~$${Math.round(price * 0.04 * 100)} premium`, action:`Buy ${callStrike}C exp ${expStr}` },
+      primary: { name:'Long Call', strike:`$${callStrike}`, expiry:`${expStr} (${dte} DTE)`, cost:`~$${Math.round(price * 0.04 * 100)} est. premium (IV-dependent — check broker)`, action:`Buy ${callStrike}C exp ${expStr}` },
       spread:  { name:'Bull Call Spread', buy:`$${callStrike}`, sell:`$${spreadSell}`, expiry:`${expStr}`, maxGain:`$${Math.round((spreadSell-callStrike)*100 - price*0.015*100)}`, action:`Buy ${callStrike}C / Sell ${spreadSell}C exp ${expStr}` }
     }
   }
@@ -35,7 +35,7 @@ function calcStrikes(price, verdict, rsi) {
     const putStrike = round(price * 0.95)
     const spreadBuy = round(price * 0.88)
     return {
-      primary: { name:'Long Put', strike:`$${putStrike}`, expiry:`${expStr} (${dte} DTE)`, cost:`~$${Math.round(price * 0.04 * 100)} premium`, action:`Buy ${putStrike}P exp ${expStr}` },
+      primary: { name:'Long Put', strike:`$${putStrike}`, expiry:`${expStr} (${dte} DTE)`, cost:`~$${Math.round(price * 0.04 * 100)} est. premium (IV-dependent — check broker)`, action:`Buy ${putStrike}P exp ${expStr}` },
       spread:  { name:'Bear Put Spread', buy:`$${putStrike}`, sell:`$${spreadBuy}`, expiry:`${expStr}`, maxGain:`$${Math.round((putStrike-spreadBuy)*100 - price*0.015*100)}`, action:`Buy ${putStrike}P / Sell ${spreadBuy}P exp ${expStr}` }
     }
   }
@@ -360,7 +360,193 @@ function PositionSizer({ price }) {
   )
 }
 
-export default function Options() {
+/* ══════════════════════════════════════════
+   REAL OPTIONS CHAIN — Tradier
+══════════════════════════════════════════ */
+function RealOptionsChain({ ticker }) {
+  const [expirations, setExpirations] = useState([])
+  const [selExpiry, setSelExpiry]     = useState(null)
+  const [chain, setChain]             = useState(null)
+  const [chainType, setChainType]     = useState('call') // 'call' | 'put'
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState(null)
+
+  // Load expirations when ticker changes
+  useEffect(() => {
+    if (!ticker) return
+    setExpirations([]); setSelExpiry(null); setChain(null); setError(null)
+    fetchOptionsExpirations(ticker).then(dates => {
+      if (!dates.length) { setError('No expiration dates returned. Check Tradier key.'); return }
+      const nearby = dates.slice(0, 8) // show next 8 expiries
+      setExpirations(nearby)
+      setSelExpiry(nearby[0])
+    })
+  }, [ticker])
+
+  // Load chain when expiry selected
+  useEffect(() => {
+    if (!selExpiry || !ticker) return
+    setChain(null); setLoading(true)
+    fetchOptionsChain(ticker, selExpiry).then(data => {
+      setLoading(false)
+      if (!data) { setError('No chain data for this expiry.'); return }
+      setChain(data)
+    })
+  }, [ticker, selExpiry])
+
+  if (!hasKeys().polygon) return (
+    <div style={{ background:'rgba(255,215,0,0.06)', border:'1px solid rgba(255,215,0,0.2)', borderRadius:10, padding:'12px 16px', fontSize:'0.82rem', color:YELLOW, marginTop:4 }}>
+      <strong>Real Options Chain</strong> requires a free Polygon.io API key.<br />
+      <span style={{ color:G1, fontSize:'0.78rem' }}>Sign up at polygon.io → add <code style={{ color:CYAN }}>POLYGON_KEY</code> in Vercel env vars (no VITE_ prefix).</span>
+    </div>
+  )
+
+  const calls = (chain || []).filter(c => c.type === 'call')
+  const puts  = (chain || []).filter(c => c.type === 'put')
+  const shown = chainType === 'call' ? calls : puts
+
+  const ivColor = iv => iv == null ? G1 : iv > 80 ? RED : iv > 50 ? YELLOW : GREEN
+
+  return (
+    <div>
+      {/* Expiry selector */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+        {expirations.map(d => (
+          <button key={d} onClick={() => setSelExpiry(d)}
+            style={{ padding:'4px 10px', borderRadius:6, border:`1px solid ${selExpiry===d?CYAN:'#333'}`,
+              background: selExpiry===d ? 'rgba(0,229,255,0.1)' : 'transparent',
+              color: selExpiry===d ? CYAN : G1, fontSize:'0.72rem', cursor:'pointer', fontFamily:'var(--font-mono)' }}>
+            {d}
+          </button>
+        ))}
+      </div>
+
+      {/* Call/Put toggle */}
+      <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+        {['call','put'].map(t => (
+          <button key={t} onClick={() => setChainType(t)}
+            style={{ padding:'6px 18px', borderRadius:6, border:`1px solid ${chainType===t ? (t==='call'?GREEN:RED) :'#333'}`,
+              background: chainType===t ? `rgba(${t==='call'?'0,200,5':'255,80,0'},0.1)` : 'transparent',
+              color: chainType===t ? (t==='call'?GREEN:RED) : G1,
+              fontWeight:600, fontSize:'0.78rem', cursor:'pointer', textTransform:'uppercase', letterSpacing:0.5 }}>
+            {t}s
+          </button>
+        ))}
+      </div>
+
+      {loading && <LoadingBar text="Loading chain…" />}
+
+      {shown.length > 0 && (
+        <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.72rem', fontFamily:'var(--font-mono)' }}>
+            <thead>
+              <tr style={{ color:G1, borderBottom:'1px solid #222' }}>
+                {['Strike','Bid','Ask','Mid','Vol','OI','IV%','Δ Delta','Θ Theta'].map(h => (
+                  <th key={h} style={{ padding:'5px 6px', textAlign:'right', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((c, i) => {
+                const isITM = chainType === 'call' ? (c.strike < (chain[0]?.last || 0)) : (c.strike > (chain[0]?.last || 999999))
+                return (
+                  <tr key={c.symbol || i} style={{ background: i%2===0 ? 'transparent' : 'rgba(255,255,255,0.02)', borderBottom:'1px solid #1a1a1a' }}>
+                    <td style={{ padding:'5px 6px', textAlign:'right', fontWeight:700, color: chainType==='call'? GREEN : RED }}>${c.strike}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:'#ccc' }}>{c.bid?.toFixed(2) ?? '—'}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:'#ccc' }}>{c.ask?.toFixed(2) ?? '—'}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:WHITE, fontWeight:600 }}>{c.midpoint?.toFixed(2) ?? '—'}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:c.volume>1000?YELLOW:G1 }}>{c.volume?.toLocaleString() ?? '—'}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:G1 }}>{c.oi?.toLocaleString() ?? '—'}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:ivColor(c.iv), fontWeight:600 }}>{c.iv != null ? c.iv+'%' : '—'}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:G1 }}>{c.delta?.toFixed(2) ?? '—'}</td>
+                    <td style={{ padding:'5px 6px', textAlign:'right', color:RED }}>{c.theta?.toFixed(2) ?? '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {error && <div style={{ color:YELLOW, fontSize:'0.78rem', marginTop:8 }}>{error}</div>}
+
+      <div style={{ fontSize:'0.68rem', color:G1, marginTop:8, lineHeight:1.6 }}>
+        Data: Polygon.io (15-min delayed) · Mid = (Bid+Ask)/2 · IV = implied volatility · Theta = daily decay
+      </div>
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════════
+   UNUSUAL OPTIONS FLOW — FMP
+══════════════════════════════════════════ */
+function UnusualFlow({ ticker }) {
+  const [flow, setFlow]     = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [done, setDone]     = useState(false)
+
+  const load = useCallback(async () => {
+    if (!ticker || !hasKeys().fmp) return
+    setLoading(true); setFlow(null)
+    const d = await fetchUnusualFlow(ticker)
+    setFlow(d); setDone(true); setLoading(false)
+  }, [ticker])
+
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <LoadingBar text="Scanning options flow…" />
+
+  if (done && !flow) return (
+    <div style={{ color:G1, fontSize:'0.8rem', padding:'12px 0' }}>
+      No unusual options activity detected for {ticker} — Vol/OI &lt; 2× or volume too low.
+    </div>
+  )
+
+  if (!flow) return null
+
+  const typeColor = t => t === 'call' ? GREEN : RED
+
+  return (
+    <div>
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+        <span style={{ background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.3)', borderRadius:6, padding:'3px 10px', fontSize:'0.7rem', color:YELLOW, fontFamily:'var(--font-mono)' }}>
+          ⚡ {flow.length} unusual contract{flow.length!==1?'s':''} detected
+        </span>
+      </div>
+      <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.72rem', fontFamily:'var(--font-mono)' }}>
+          <thead>
+            <tr style={{ color:G1, borderBottom:'1px solid #222' }}>
+              {['Type','Strike','Expiry','Volume','OI','Vol/OI','IV%','Last','ITM?'].map(h => (
+                <th key={h} style={{ padding:'5px 6px', textAlign:'right', fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {flow.map((c, i) => (
+              <tr key={i} style={{ background: i%2===0 ? 'transparent' : 'rgba(255,255,255,0.02)', borderBottom:'1px solid #1a1a1a' }}>
+                <td style={{ padding:'5px 6px', textAlign:'right', fontWeight:700, color:typeColor(c.type), textTransform:'uppercase', letterSpacing:0.5 }}>{c.type}</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color:WHITE }}>{c.strike ? '$'+c.strike : '—'}</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color:G1 }}>{c.expiry?.slice(0,10) ?? '—'}</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color:YELLOW, fontWeight:600 }}>{c.volume?.toLocaleString() ?? '—'}</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color:G1 }}>{c.oi?.toLocaleString() ?? '—'}</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color: c.ratio >= 5 ? RED : c.ratio >= 3 ? YELLOW : GREEN, fontWeight:700 }}>{c.ratio}×</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color: c.iv > 80 ? RED : c.iv > 50 ? YELLOW : G1 }}>{c.iv != null ? c.iv+'%' : '—'}</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color:'#ccc' }}>{c.last?.toFixed(2) ?? '—'}</td>
+                <td style={{ padding:'5px 6px', textAlign:'right', color: c.inTheMoney ? GREEN : G1 }}>{c.inTheMoney ? '✓' : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize:'0.68rem', color:G1, marginTop:8, lineHeight:1.6 }}>
+        Unusual = Vol/OI ≥ 2× and volume ≥ 500 · High ratio = institutional money rushing in · Red ratio = extreme activity (5×+)
+      </div>
+    </div>
+  )
+}
+
+export default function Options({ onNavigateToDive }) {
   const [ticker, setTicker] = useState('')
   const [input, setInput] = useState('')
   const { data, loading, error, fetch } = useTickerData()
@@ -404,6 +590,12 @@ export default function Options() {
       {error && <div style={{ background:'rgba(255,80,0,0.08)', border:'1px solid rgba(255,80,0,0.3)', borderRadius:10, padding:'12px 16px', fontSize:'0.84rem', color:RED, marginBottom:12 }}>{error}</div>}
 
       {data && result && (
+        <>
+        {onNavigateToDive && (
+          <button onClick={() => onNavigateToDive(ticker)} style={{ width:'100%', marginBottom:10, padding:'10px', borderRadius:8, background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', color:'#00E5FF', fontFamily:'var(--font-mono)', fontSize:'0.7rem', cursor:'pointer', letterSpacing:0.5 }}>
+            🔍 Full Dive Analysis — {ticker} →
+          </button>
+        )}
         <TickerOptionsGuide
           ticker={ticker}
           result={result}
@@ -412,6 +604,18 @@ export default function Options() {
           metrics={data.metrics}
           candles={data.candles}
         />
+
+        <SectionHeader>⚡ Unusual Options Flow — {ticker}</SectionHeader>
+        <div className="card" style={{ padding:'14px 16px' }}>
+          <UnusualFlow ticker={ticker} />
+        </div>
+
+        <SectionHeader>📋 Real Options Chain — {ticker}</SectionHeader>
+        <div className="card" style={{ padding:'14px 16px' }}>
+          <RealOptionsChain ticker={ticker} />
+        </div>
+
+        </>
       )}
 
       {/* General section always visible */}

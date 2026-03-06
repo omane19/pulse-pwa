@@ -1,0 +1,48 @@
+
+          {/* Short Squeeze Meter */}
+          {data.sharesFloat && (data.sharesFloat.freeFloat != null || data.sharesFloat.floatShares != null) && (() => {
+            const ff = data.sharesFloat.freeFloat   // % of shares that can be traded
+            const floatShares = data.sharesFloat.floatShares
+            const avgVol = data.quote?.v || null
+            const daysTocover = (floatShares && avgVol && avgVol > 0)
+              ? parseFloat((floatShares * 0.05 / avgVol).toFixed(1))  // approx: 5% short / avg vol
+              : null
+            // Squeeze score: 0-100 based on float tightness
+            // Low float (<10%) + high short interest = squeeze potential
+            const squeezeScore = ff != null
+              ? Math.max(0, Math.min(100, Math.round((1 - ff / 100) * 80 + (daysTocover ? Math.min(20, daysTocover * 2) : 0))))
+              : null
+            const squeezeLabel = squeezeScore == null ? '—' : squeezeScore >= 70 ? '🔥 High' : squeezeScore >= 40 ? '⚡ Moderate' : '🟢 Low'
+            const squeezeColor = squeezeScore == null ? '#888' : squeezeScore >= 70 ? '#FF5000' : squeezeScore >= 40 ? '#FFD700' : '#00C805'
+            return (
+              <><SectionHeader>Short Squeeze Meter</SectionHeader>
+              <div className="card" style={{padding:'14px 16px'}}>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:12}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.56rem',color:'#888',marginBottom:4}}>FLOAT</div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'1.1rem',fontWeight:700,color: ff < 10 ? '#FF5000' : ff < 20 ? '#FFD700' : '#00C805'}}>{ff != null ? `${ff.toFixed(1)}%` : '—'}</div>
+                    <div style={{fontSize:'0.6rem',color:'#555',marginTop:2}}>free float</div>
+                  </div>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.56rem',color:'#888',marginBottom:4}}>DAYS TO COVER</div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'1.1rem',fontWeight:700,color: daysTocover > 5 ? '#FF5000' : daysTocover > 2 ? '#FFD700' : '#00C805'}}>{daysTocover != null ? daysTocover : '—'}</div>
+                    <div style={{fontSize:'0.6rem',color:'#555',marginTop:2}}>at avg volume</div>
+                  </div>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.56rem',color:'#888',marginBottom:4}}>SQUEEZE SCORE</div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'1.1rem',fontWeight:700,color:squeezeColor}}>{squeezeScore != null ? squeezeScore : '—'}</div>
+                    <div style={{fontSize:'0.6rem',color:squeezeColor,marginTop:2}}>{squeezeLabel}</div>
+                  </div>
+                </div>
+                <div style={{height:6,background:'#1a1a1a',borderRadius:3,overflow:'hidden',marginBottom:8}}>
+                  <div style={{height:'100%',width:`${squeezeScore ?? 0}%`,background:`linear-gradient(90deg,#00C805,${squeezeColor})`,borderRadius:3}}/>
+                </div>
+                <div style={{fontSize:'0.72rem',color:'#888',lineHeight:1.6}}>
+                  {ff < 10 ? '⚠ Ultra-low float — small buying pressure can cause explosive moves. High risk both ways.' :
+                   ff < 20 ? 'Low float stock — above-average squeeze potential. Watch for unusual volume.' :
+                   'Normal float — standard squeeze risk. Focus on fundamentals.'}
+                  {daysTocover > 5 ? ' Short sellers would take 5+ days to cover — squeeze vulnerability elevated.' : ''}
+                </div>
+              </div></>
+            )
+          })()}

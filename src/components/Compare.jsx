@@ -9,7 +9,7 @@ const GREEN='#00C805'; const RED='#FF5000'; const CYAN='#00E5FF'; const YELLOW='
 const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
 async function loadOne(ticker) {
-  const [quote, candles, metrics, news, rec, earnings, profile, score, rating, dcf, esg, sharesFloat] = await Promise.all([
+  let [quote, candles, metrics, news, rec, earnings, profile, score, rating, dcf, esg, sharesFloat] = await Promise.all([
     fetchQuote(ticker), fetchCandles(ticker,260), fetchMetrics(ticker),
     fetchNews(ticker,7), fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
     fetchScore(ticker), fetchRating(ticker), fetchDCF(ticker), fetchESG(ticker), fetchSharesFloat(ticker)
@@ -202,7 +202,15 @@ export default function Compare() {
                 <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:G1 }}>{l}</div>
                 {[a,b].map((d,j)=>{
                   const v=fn(d); const c=col?col(d):G1
-                  return <div key={j} style={{ fontFamily:'var(--font-mono)', fontSize:'0.8rem', color:c||G1, textAlign:'right' }}>{v}</div>
+                  // Determine winner for numeric metrics
+                  const va=fn(a); const vb=fn(b)
+                  const numA=parseFloat(String(va).replace(/[^\d.-]/g,''))
+                  const numB=parseFloat(String(vb).replace(/[^\d.-]/g,''))
+                  const hasWinner=!isNaN(numA)&&!isNaN(numB)&&numA!==numB&&va!=='—'&&vb!=='—'
+                  // For most metrics higher=better, except P/E, EV/EBITDA, PEG (lower=better)
+                  const lowerBetter=['P/E (TTM)','EV/EBITDA','PEG Ratio'].includes(l)
+                  const isWinner=hasWinner&&(lowerBetter?(j===0?numA<numB:numB<numA):(j===0?numA>numB:numB>numA))
+                  return <div key={j} style={{ fontFamily:'var(--font-mono)', fontSize:'0.8rem', color:c||G1, textAlign:'right', fontWeight:isWinner?700:400, opacity:hasWinner&&!isWinner?0.5:1 }}>{v}{isWinner?' ✓':''}</div>
                 })}
               </div>
             ))}

@@ -10,7 +10,7 @@ function PartyBadge({ party }) {
   return <span style={{ padding:'1px 6px', borderRadius:4, background:`${color}22`, border:`1px solid ${color}66`, color, fontSize:'0.6rem', fontFamily:'var(--font-mono)' }}>{label}</span>
 }
 
-function TradeRow({ t, type }) {
+function TradeRow({ t, type, onNavigate }) {
   const isBuy = t.isBuy
   const accent = isBuy ? '#00ff88' : '#ff4e4e'
   return (
@@ -32,11 +32,16 @@ function TradeRow({ t, type }) {
           {t.shares > 0 && <span style={{ marginLeft:8 }}>{t.shares.toLocaleString()} shs @ {t.price ? `$${t.price}` : '—'}</span>}
         </div>
       </div>
+      {onNavigate && (
+        <button onClick={() => onNavigate(t.ticker)} style={{ background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:6, padding:'4px 8px', color:'#00E5FF', fontFamily:'var(--font-mono)', fontSize:'0.6rem', cursor:'pointer', flexShrink:0, whiteSpace:'nowrap' }}>
+          Dive →
+        </button>
+      )}
     </div>
   )
 }
 
-function Section({ title, icon, items, type, loading, empty }) {
+function Section({ title, icon, items, type, loading, empty, onNavigate }) {
   return (
     <div style={{ marginBottom:24 }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
@@ -51,7 +56,7 @@ function Section({ title, icon, items, type, loading, empty }) {
       ) : items.length === 0 ? (
         <div style={{ padding:'16px 0', textAlign:'center', color:'#666', fontFamily:'var(--font-mono)', fontSize:'0.65rem' }}>{empty}</div>
       ) : (
-        items.map((t, i) => <TradeRow key={i} t={t} type={type} />)
+        items.map((t, i) => <TradeRow key={i} t={t} type={type} onNavigate={onNavigate} />)
       )}
     </div>
   )
@@ -76,7 +81,7 @@ function TickerSearch({ onSearch }) {
   )
 }
 
-export default function SmartMoney() {
+export default function SmartMoney({ onNavigateToDive }) {
   const [tab, setTab] = useState('feed')  // 'feed' | 'search'
   const [congressFeed, setCongressFeed] = useState([])
   const [insiderFeed,  setInsiderFeed]  = useState([])
@@ -157,8 +162,8 @@ export default function SmartMoney() {
 
         {tab === 'feed' && (
           <>
-            <Section title="CONGRESSIONAL BUYS" icon="🏛️" items={congressFeed} type="congress" loading={loadingFeed} empty="No recent congressional purchases found" />
-            <Section title="CEO / EXECUTIVE BUYS" icon="💼" items={insiderFeed} type="insider" loading={loadingFeed} empty="No recent executive purchases found" />
+            <Section title="CONGRESSIONAL BUYS" icon="🏛️" items={congressFeed} type="congress" loading={loadingFeed} empty="No recent congressional purchases found" onNavigate={onNavigateToDive} />
+            <Section title="CEO / EXECUTIVE BUYS" icon="💼" items={insiderFeed} type="insider" loading={loadingFeed} empty="No recent executive purchases found" onNavigate={onNavigateToDive} />
           </>
         )}
 
@@ -172,8 +177,8 @@ export default function SmartMoney() {
             )}
             {searchTicker && !searchError && (
               <>
-                <Section title={`CONGRESS — ${searchTicker}`} icon="🏛️" items={congressSearch} type="congress" loading={loadingSearch} empty="No congressional trades found" />
-                <Section title={`INSIDERS — ${searchTicker}`} icon="💼" items={insiderSearch} type="insider" loading={loadingSearch} empty="No insider trades found" />
+                <Section title={`CONGRESS — ${searchTicker}`} icon="🏛️" items={congressSearch} type="congress" loading={loadingSearch} empty="No congressional trades found" onNavigate={onNavigateToDive} />
+                <Section title={`INSIDERS — ${searchTicker}`} icon="💼" items={insiderSearch} type="insider" loading={loadingSearch} empty="No insider trades found" onNavigate={onNavigateToDive} />
               </>
             )}
             {!searchTicker && (

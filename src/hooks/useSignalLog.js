@@ -201,5 +201,14 @@ export function computeStats(signals) {
   const best          = buyCalls.length ? buyCalls.reduce((a, b) => (b.return_30d||0) > (a.return_30d||0) ? b : a, buyCalls[0]) : null
   const worst         = buyCalls.length ? buyCalls.reduce((a, b) => (b.return_30d||0) < (a.return_30d||0) ? b : a, buyCalls[0]) : null
 
-  return { total: signals.length, buyCalls: buyCalls.length, buyWins: buyWins.length, winRate, avgReturn, best, worst }
+  // Hypothetical P&L: $1,000 invested in each BUY signal
+  const hypothetical = buyCalls.length
+    ? buyCalls.reduce((total, s) => total + 1000 * (1 + (s.return_30d || 0) / 100), 0)
+    : null
+  const hypotheticalInvested = buyCalls.length * 1000
+  const hypotheticalPnL = hypothetical != null ? parseFloat((hypothetical - hypotheticalInvested).toFixed(0)) : null
+  const hypotheticalPct = hypothetical != null ? parseFloat(((hypothetical / hypotheticalInvested - 1) * 100).toFixed(1)) : null
+
+  return { total: signals.length, buyCalls: buyCalls.length, buyWins: buyWins.length, winRate, avgReturn, best, worst,
+    hypotheticalInvested, hypotheticalPnL, hypotheticalPct, hypotheticalCalls: buyCalls.length }
 }

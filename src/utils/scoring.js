@@ -45,11 +45,11 @@ export function calcMom(candles, quote) {
   const closes = candles.closes
   const price = quote.c
   if (!price || !Array.isArray(closes) || closes.length === 0) return out
-  if (closes.length >= 20) out['1m'] = parseFloat(((price / closes[closes.length - 20] - 1) * 100).toFixed(2))
-  if (closes.length >= 60) out['3m'] = parseFloat(((price / closes[closes.length - 60] - 1) * 100).toFixed(2))
+  if (closes.length >= 21) out['1m'] = parseFloat(((price / closes[closes.length - 21] - 1) * 100).toFixed(2))
+  if (closes.length >= 61) out['3m'] = parseFloat(((price / closes[closes.length - 61] - 1) * 100).toFixed(2))
   out['1d'] = quote.dp || 0
   if (closes.length >= 15) {
-    const diffs = (Array.isArray(closes) ? closes : []).slice(-14).map((c, i, arr) => i === 0 ? 0 : c - arr[i - 1]).slice(1)
+    const diffs = (Array.isArray(closes) ? closes : []).slice(-15).map((c, i, arr) => i === 0 ? 0 : c - arr[i - 1]).slice(1)
     const gains = diffs.map(d => d > 0 ? d : 0)
     const losses = diffs.map(d => d < 0 ? -d : 0)
     const ag = gains.reduce((a, b) => a + b, 0) / gains.length
@@ -108,7 +108,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
 
   // Momentum
   let ms = 0; const mr = []
-  if ('1d' in mom) { ms += Math.max(-.3, Math.min(.3, mom['1d'] / 5)); mr.push(`1-day ${mom['1d'] > 0 ? '+' : ''}${mom['1d']}%`) }
+  if ('1d' in mom) { ms += Math.max(-.3, Math.min(.3, mom['1d'] / 5)); mr.push(`1-day ${mom['1d'] > 0 ? '+' : ''}${parseFloat(mom['1d'].toFixed(2))}%`) }
   if ('1m' in mom) { ms += Math.max(-.4, Math.min(.4, mom['1m'] / 15)); mr.push(`1-month ${mom['1m'] > 0 ? '+' : ''}${mom['1m']}%`) }
   if ('3m' in mom) { ms += Math.max(-.3, Math.min(.3, mom['3m'] / 20)); mr.push(`3-month ${mom['3m'] > 0 ? '+' : ''}${mom['3m']}%`) }
   if ('rsi' in mom) {
@@ -139,8 +139,8 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   // MACD — trend confirmation via EMA crossover
   const macd = extras?.macd
   if (macd) {
-    if (macd.bullishCross) { ms += 0.25; mr.push(`MACD bullish crossover — momentum turning positive`) }
-    else if (macd.bearishCross) { ms -= 0.25; mr.push(`MACD bearish crossover — momentum turning negative`) }
+    if (macd.bullishCross) { ms += 0.25; mr.push(`MACD crossed above zero — bullish momentum shift`) }
+    else if (macd.bearishCross) { ms -= 0.25; mr.push(`MACD crossed below zero — bearish momentum shift`) }
     else if (macd.trend === 'bullish') { ms += 0.1; mr.push(`MACD above zero — bullish momentum`) }
     else if (macd.trend === 'bearish') { ms -= 0.1; mr.push(`MACD below zero — bearish momentum`) }
   }
@@ -244,7 +244,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   S.valuation = Math.max(-1, Math.min(1, vs)); R.valuation = vr
 
   // Sentiment
-  const nw = news?.length || 0; const wt = Math.min(nw / 8, 1.5)
+  const nw = news?.length || 0; const wt = Math.min(nw / 10, 1.0)  // max 1.0x to avoid over-amplification
   const ss = Math.max(-1, Math.min(1, avgSent * 1.5 * wt))
   const lb = avgSent > .08 ? 'Bullish' : avgSent < -.08 ? 'Bearish' : 'Neutral'
   S.sentiment = ss; R.sentiment = [`Credibility-weighted ${avgSent > 0 ? '+' : ''}${avgSent} (${lb}) · ${nw} articles`]
@@ -301,16 +301,22 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     const withEst = earn.filter(q => q.estimate != null && q.actual != null)
     if (withEst.length) {
       // EPS surprise % per quarter
-      const epsSurp = withEst.map(q =>
-        ((q.actual - q.estimate) / Math.abs(q.estimate || 1)) * 100)
+      const epsSurp = withEst.map(q => {
+        const raw = ((q.actual - q.estimate) / Math.abs(q.estimate || 1)) * 100
+        return Math.max(-100, Math.min(100, raw))  // cap at ±100% to avoid penny-EPS distortion
+      })
 
       const recent4 = (Array.isArray(epsSurp) ? epsSurp : []).slice(0, 4)
       const avgS    = recent4.reduce((a, b) => a + b, 0) / recent4.length
       const beats   = recent4.filter(x => x > 0).length
 
-      // Base score from beat rate and magnitude
-      es += (beats / recent4.length - 0.5) * 1.2   // -0.6 to +0.6
-      es += Math.max(-0.3, Math.min(0.3, avgS / 20)) // magnitude bonus
+      // Base score from beat rate and magnitude (min 2 quarters for reliability)
+      if (recent4.length >= 2) {
+        es += (beats / recent4.length - 0.5) * 1.2   // -0.6 to +0.6
+        es += Math.max(-0.3, Math.min(0.3, avgS / 20)) // magnitude bonus
+      } else if (recent4.length === 1) {
+        es += (beats > 0 ? 0.15 : -0.15)  // small nudge for single quarter
+      }
 
       // Consecutive beats bonus — most powerful signal
       let streak = 0
@@ -477,8 +483,10 @@ export function timeAgo(ts) {
 }
 
 export function fmtMcap(m) {
-  if (!m) return 'N/A'
-  if (m >= 1_000_000) return `$${(m / 1_000_000).toFixed(2)}T`
-  if (m >= 1_000) return `$${(m / 1_000).toFixed(1)}B`
-  return `$${m.toFixed(0)}M`
+  if (!m || m <= 0) return 'N/A'
+  // FMP returns marketCap in raw dollars (e.g. 2.8T = 2,800,000,000,000)
+  if (m >= 1e12) return `$${(m / 1e12).toFixed(2)}T`
+  if (m >= 1e9)  return `$${(m / 1e9).toFixed(1)}B`
+  if (m >= 1e6)  return `$${(m / 1e6).toFixed(0)}M`
+  return `$${(m / 1e3).toFixed(0)}K`
 }
