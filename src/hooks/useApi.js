@@ -48,70 +48,45 @@ async function go(url, retries = 1) {
 
 /* ── Finnhub — routed through /api/proxy (key stays server-side) ── */
 async function fh(path, ttl = 30000) {
-  // If running locally with key in localStorage, use direct call
-  const key = FH_KEY()
-  const useProxy = !key || key.length < 8
-  const url = useProxy
-    ? `/api/proxy?provider=finnhub&path=${encodeURIComponent(path)}`
-    : `https://finnhub.io/api/v1${path}&token=${key}`
+  const url = `/api/proxy?provider=finnhub&path=${encodeURIComponent(path)}`
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url, 1)
   if (data !== null) cSet(url, data)
   return data
 }
 
-/* ── Alpha Vantage — routed through /api/proxy ── */
+/* ── Alpha Vantage — always proxied ── */
 async function av(params, ttl = 3600000) {
-  const key = AV_KEY()
-  const useProxy = !key || key.length < 8
-  let url
-  if (useProxy) {
-    const { apikey, ...rest } = params
-    const qs = new URLSearchParams(rest)
-    url = `/api/proxy?provider=av&path=${encodeURIComponent('?' + qs.toString())}`
-  } else {
-    const qs = new URLSearchParams({ ...params, apikey: key })
-    url = `https://www.alphavantage.co/query?${qs}`
-  }
+  const { apikey, ...rest } = params
+  const qs = new URLSearchParams(rest)
+  const url = `/api/proxy?provider=av&path=${encodeURIComponent('?' + qs.toString())}`
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (!data || data.Information || data.Note) return null
   cSet(url, data); return data
 }
 
-/* ── FMP stable — routed through /api/proxy (key stays server-side) ── */
+/* ── FMP stable — always proxied, key server-side only ── */
 async function fmp(path, ttl = 300000) {
-  const key = FMP_KEY()
-  const useProxy = !key || key.length < 8
-  const url = useProxy
-    ? `/api/proxy?provider=fmp&path=${encodeURIComponent(path)}`
-    : (() => { const sep = path.includes('?') ? '&' : '?'; return `https://financialmodelingprep.com/stable${path}${sep}apikey=${key}` })()
+  const url = `/api/proxy?provider=fmp&path=${encodeURIComponent(path)}`
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (data !== null) cSet(url, data)
   return data
 }
 
-/* ── FMP v3 — routed through /api/proxy ── */
+/* ── FMP v3 — always proxied ── */
 async function fmpv3(path, ttl = 300000) {
-  const key = FMP_KEY()
-  const useProxy = !key || key.length < 8
-  const url = useProxy
-    ? `/api/proxy?provider=fmp_v3&path=${encodeURIComponent(path)}`
-    : (() => { const sep = path.includes('?') ? '&' : '?'; return `https://financialmodelingprep.com/api/v3${path}${sep}apikey=${key}` })()
+  const url = `/api/proxy?provider=fmp_v3&path=${encodeURIComponent(path)}`
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (data !== null) cSet(url, data)
   return data
 }
 
-/* ── FMP v4 — routed through /api/proxy ── */
+/* ── FMP v4 — always proxied ── */
 async function fmpv4(path, ttl = 300000) {
-  const key = FMP_KEY()
-  const useProxy = !key || key.length < 8
-  const url = useProxy
-    ? `/api/proxy?provider=fmp_v4&path=${encodeURIComponent(path)}`
-    : (() => { const sep = path.includes('?') ? '&' : '?'; return `https://financialmodelingprep.com/api/v4${path}${sep}apikey=${key}` })()
+  const url = `/api/proxy?provider=fmp_v4&path=${encodeURIComponent(path)}`
   const hit = cGet(url, ttl); if (hit !== null) return hit
   const data = await go(url)
   if (data !== null) cSet(url, data)
@@ -531,28 +506,22 @@ export async function fetchFMPScreener({ minMcap = 500, limit = 500 } = {}) {
    Uses FMP company-screener with dividendMoreThan filter
 ══════════════════════════════════════════ */
 export async function fetchDividendScreener({ minYield = 0, limit = 100 } = {}) {
-  if (!FMP_KEY() || FMP_KEY().length < 8) return []
   try {
-    const key = FMP_KEY()
-    // Use stable dividends-calendar via proxy (key stays server-side)
+    // Use stable dividends-calendar — available on FMP paid plans
+    // Routes through proxy — key stays server-side
     const now = new Date()
     const from = now.toISOString().slice(0, 10)
     const to = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10)
     const apiPath = `/dividends-calendar?from=${from}&to=${to}`
-    const url = (!key || key.length < 8)
-      ? `/api/proxy?provider=fmp&path=${encodeURIComponent(apiPath)}`
-      : `https://financialmodelingprep.com/stable${apiPath}&apikey=${key}`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error('calendar failed')
-    const d = await res.json()
+    const d = await fmp(apiPath, 3600000)
     if (!Array.isArray(d) || !d.length) throw new Error('empty')
-    // Deduplicate by ticker (calendar may have multiple entries), keep highest yield
+
+    // Deduplicate by ticker (calendar has multiple entries per stock), keep highest yield
     const seen = {}
     for (const r of d) {
       const ticker = r.symbol
       if (!ticker) continue
-      // dividends-calendar returns yield already as percentage (e.g. 4.5 = 4.5%)
-      // but some entries return it as decimal (e.g. 0.045) — detect and normalize
+      // Normalize yield: some entries decimal (0.045), some percentage (4.5)
       const rawYield = r.yield ?? r.dividendYield ?? null
       const yieldPct = rawYield != null
         ? parseFloat((rawYield > 1 ? rawYield : rawYield * 100).toFixed(2))
@@ -563,7 +532,7 @@ export async function fetchDividendScreener({ minYield = 0, limit = 100 } = {}) 
           ticker,
           name:        r.name || r.companyName || ticker,
           sector:      r.sector || 'Unknown',
-          price:       r.price || r.adjDividend || 0,
+          price:       r.price || 0,
           mcap:        r.marketCap || 0,
           divYield:    yieldPct,
           dividend:    r.dividend || r.adjDividend || null,
@@ -574,10 +543,28 @@ export async function fetchDividendScreener({ minYield = 0, limit = 100 } = {}) 
         }
       }
     }
-    return Object.values(seen)
+
+    const results = Object.values(seen)
       .filter(s => s.divYield >= minYield)
       .sort((a, b) => (b.divYield || 0) - (a.divYield || 0))
       .slice(0, limit)
+
+    // Fallback: if calendar returns nothing, use screener
+    if (!results.length) {
+      const apiPath2 = `/company-screener?dividendMoreThan=${minYield || 1}&limit=200&isEtf=false&isActivelyTrading=true&country=US`
+      const d2 = await fmp(apiPath2, 3600000)
+      if (!Array.isArray(d2) || !d2.length) return []
+      return d2.map(r => {
+        const rawYield = r.dividendYield ?? null
+        const yieldPct = rawYield != null ? parseFloat((rawYield < 1 ? rawYield * 100 : rawYield).toFixed(2)) : null
+        if (!yieldPct || yieldPct <= 0) return null
+        return { ticker: r.symbol, name: r.companyName || r.symbol, sector: r.sector || 'Unknown',
+          price: r.price || 0, mcap: r.marketCap || 0, divYield: yieldPct,
+          dividend: r.lastAnnualDividend || null, exDivDate: null, paymentDate: null, frequency: null, pe: r.pe || null }
+      }).filter(Boolean).sort((a,b) => b.divYield - a.divYield).slice(0, limit)
+    }
+
+    return results
   } catch {
     return []
   }

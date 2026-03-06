@@ -391,11 +391,11 @@ export default function Screener({ onNavigateToDive }) {
     // Note: FMP key is server-side — proxy handles auth
     setDivLoading(true); setDivProgress(0); setDivResults([]); setDivRan(false); setDivError(null)
 
-    setDivProgressTicker('Fetching dividend calendar…')
+    setDivProgressTicker('Fetching high-yield stocks…')
     const calendarData = await fetchDividendScreener({ minYield: 0, limit: 200 })
 
     if (!calendarData.length) {
-      setDivError('No dividend data returned from FMP. The /stable/dividends-calendar endpoint may not be available on your plan.')
+      setDivError('No dividend data returned from FMP. This may be a temporary API issue — try again in a few minutes.')
       setDivLoading(false)
       return
     }
