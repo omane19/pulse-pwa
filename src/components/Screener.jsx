@@ -348,7 +348,7 @@ export default function Screener({ onNavigateToDive }) {
           for (const data of batchResults) {
             if (!data) continue
             const ea = v => Array.isArray(v) ? v : []
-            const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea(data.news), data.rec, ea(data.earnings), undefined, {})
+            const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea(data.news), data.rec, ea(data.earnings), undefined, { ticker: data.ticker })
             // Try UNIVERSE match first, then use FMP sector as fallback
             const universeCat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker))
             const fmpSector = bulk.find(s => s.ticker === data.ticker)?.sector || 'Market'
@@ -374,7 +374,7 @@ export default function Screener({ onNavigateToDive }) {
       for (const data of batchResults) {
         if (!data) continue
         const ea2 = v => Array.isArray(v) ? v : []
-        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea2(data.news), data.rec, ea2(data.earnings), undefined, {})
+        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea2(data.news), data.rec, ea2(data.earnings), undefined, { ticker: data.ticker })
         const cat = selCats.find(c => UNIVERSE[c]?.includes(data.ticker)) || 'Custom'
         out.push({ ...data, result, category: cat })
       }
@@ -421,7 +421,7 @@ export default function Screener({ onNavigateToDive }) {
           let signal = null, signalColor = '#B2B2B2', verdict = null
           if (data?.quote && data?.candles) {
             const ea = v => Array.isArray(v) ? v : []
-            const scored = scoreAsset(data.quote, data.candles, data.candles?.ma50, metrics, ea(data.news), data.rec, ea(data.earnings), undefined, {})
+            const scored = scoreAsset(data.quote, data.candles, data.candles?.ma50, metrics, ea(data.news), data.rec, ea(data.earnings), undefined, { ticker: data.ticker })
             signal = scored.pct ? Math.round(scored.pct) : null
             signalColor = scored.color
             verdict = scored.verdict

@@ -134,7 +134,7 @@ export default function Watchlist({ onNavigateToDive }) {
       for (const data of batchResults) {
         if (!data) continue
         const ea=v=>Array.isArray(v)?v:[]
-        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea(data.news), data.rec, ea(data.earnings), undefined, { priceTarget: data.priceTarget, upgrades: ea(data.upgrades) })
+        const result = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea(data.news), data.rec, ea(data.earnings), undefined, { ticker: data.ticker, priceTarget: data.priceTarget, upgrades: ea(data.upgrades) })
         result.fmpRating = data.rating?.rating || null
         result.piotroski = data.score?.piotroski ?? null
         out.push({ ...data, result })

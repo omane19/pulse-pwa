@@ -438,11 +438,30 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   // Backtest showed Jan 2025 cluster: 7 BUY signals all lost 25-30% same day (DeepSeek crash)
   // Root cause: PULSE scored stocks without knowing the market was fragile
   // Fix: if SPY (broad market) is below its 50-day MA, suppress BUY → HOLD
-  // Also check sector ETF if available via regimeData prop
-  const spyMA50    = extras?.regimeData?.spyPrice && extras?.regimeData?.spyMA50
+  // EXEMPTIONS: commodities, bonds, volatility, inverse ETFs — these are uncorrelated
+  // or inversely correlated with SPY, so gating them on SPY is backwards logic
+  const SPY_EXEMPT = new Set([
+    // Precious metals
+    'GLD','IAU','SLV','SIVR','SGOL','PHYS','PSLV',
+    // Other commodities
+    'USO','UNG','DBA','PDBC','GSG','DJP',
+    // Bonds / rates
+    'TLT','IEF','SHY','BND','AGG','LQD','HYG','TIP','GOVT',
+    // Volatility
+    'VXX','UVXY','SVXY',
+    // Inverse ETFs
+    'SH','PSQ','DOG','SDS','QID','SQQQ','SPXS','SPXU',
+    // Bitcoin / crypto ETFs (uncorrelated to SPY regime)
+    'IBIT','FBTC','GBTC','BITO',
+    // Commodity miners can stay gated — they move with equities
+  ])
+  const tickerUpper = (extras?.ticker || '').toUpperCase()
+  const isSpyExempt = SPY_EXEMPT.has(tickerUpper)
+
+  const spyMA50    = !isSpyExempt && extras?.regimeData?.spyPrice && extras?.regimeData?.spyMA50
     ? extras.regimeData.spyPrice < extras.regimeData.spyMA50
     : false
-  const sectorWeak = extras?.regimeData?.sectorPrice && extras?.regimeData?.sectorMA50
+  const sectorWeak = !isSpyExempt && extras?.regimeData?.sectorPrice && extras?.regimeData?.sectorMA50
     ? extras.regimeData.sectorPrice < extras.regimeData.sectorMA50
     : false
   const marketRegimeWeak = spyMA50 || sectorWeak
