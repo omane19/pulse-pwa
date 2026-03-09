@@ -1146,6 +1146,8 @@ export async function fetchRegimeData(ticker) {
 }
 
 /* ══════════════════════════════════════════
+   MARKET MOVERS (biggest gainers/losers)
+══════════════════════════════════════════ */
 export async function fetchMarketMovers() {
   if (!hasKeys().fmp) return null
   try {
