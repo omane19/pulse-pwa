@@ -341,7 +341,7 @@ function ScoreSparkline({ ticker, currentScore }) {
 }
 
 function VerdictCard({ result, ticker }) {
-  const {pct,verdict,color,conviction,factorsAgree,reasons,scores,mom,uncertainty}=result
+  const {pct,verdict,color,conviction,factorsAgree,reasons,scores,mom,uncertainty,marketRegimeWeak,regimeLabel}=result
   const e={BUY:'●',HOLD:'◆',AVOID:'✕'}[verdict]
   const allReasons=Object.values(reasons).flat()
   const nowSigs=[]
@@ -356,6 +356,11 @@ function VerdictCard({ result, ticker }) {
     <div style={{background:`${color}08`,border:`1px solid ${color}22`,borderRadius:18,padding:'22px 16px 16px',margin:'12px 0',textAlign:'center'}}>
       <div style={{fontFamily:'var(--font-display)',fontSize:'clamp(3.5rem,15vw,5rem)',fontWeight:800,letterSpacing:-4,color,lineHeight:1}}>{pct.toFixed(0)}</div>
       <div style={{fontSize:'0.82rem',fontWeight:700,letterSpacing:'4px',textTransform:'uppercase',color,marginTop:5}}>{e} {verdict}</div>
+      {marketRegimeWeak && (
+        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'#FF500015',border:'1px solid #FF500044',borderRadius:8,padding:'4px 10px',margin:'8px auto 0',fontSize:'0.68rem',fontWeight:600,color:'#FF8060',letterSpacing:'0.5px'}}>
+          ⚠ MARKET REGIME GATE · {regimeLabel || 'Market in downtrend — BUY suppressed'}
+        </div>
+      )}
       <div style={{background:'#2E2E2E',borderRadius:3,height:3,width:160,margin:'12px auto 7px',overflow:'hidden'}}>
         <div style={{height:3,borderRadius:3,width:`${conviction}%`,background:`linear-gradient(90deg,${color},${color}88)`,transition:'width .8s'}}/>
       </div>
@@ -454,7 +459,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   // Re-score whenever base data or smart money updates
   useEffect(() => {
     if (!data) return
-    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, Array.isArray(data.news)?data.news:[], data.rec, Array.isArray(data.earnings)?data.earnings:[], smartMoney || undefined, { priceTarget: data.priceTarget, upgrades: Array.isArray(data.upgrades)?data.upgrades:[], macd: data.macd || null })
+    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, Array.isArray(data.news)?data.news:[], data.rec, Array.isArray(data.earnings)?data.earnings:[], smartMoney || undefined, { priceTarget: data.priceTarget, upgrades: Array.isArray(data.upgrades)?data.upgrades:[], macd: data.macd || null, regimeData: data.regimeData || null })
     setResult(r)
   }, [data, smartMoney])
 

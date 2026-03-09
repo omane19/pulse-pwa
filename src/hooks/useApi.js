@@ -1086,9 +1086,66 @@ export async function fetchDividends(ticker) {
   } catch { return null }
 }
 
+// ── SECTOR MAP — ticker → sector ETF ─────────────────────────────────────────
+const SECTOR_ETF_MAP = {
+  // Tech
+  AAPL:'XLK', MSFT:'XLK', NVDA:'XLK', AMD:'XLK', INTC:'XLK', AVGO:'XLK',
+  ORCL:'XLK', CRM:'XLK', ADBE:'XLK', NOW:'XLK', SNOW:'XLK', PLTR:'XLK',
+  UBER:'XLK', META:'XLK', GOOGL:'XLK', GOOG:'XLK',
+  // Consumer Discretionary
+  AMZN:'XLY', TSLA:'XLY', HD:'XLY', MCD:'XLY', NKE:'XLY', SBUX:'XLY', TGT:'XLY',
+  // Consumer Staples
+  WMT:'XLP', COST:'XLP', PG:'XLP', KO:'XLP', PEP:'XLP',
+  // Financials
+  JPM:'XLF', GS:'XLF', MS:'XLF', BAC:'XLF', WFC:'XLF', AXP:'XLF', BLK:'XLF', V:'XLF', MA:'XLF', SCHW:'XLF',
+  // Healthcare
+  JNJ:'XLV', UNH:'XLV', LLY:'XLV', ABBV:'XLV', MRK:'XLV', PFE:'XLV', TMO:'XLV',
+  // Energy
+  XOM:'XLE', CVX:'XLE', COP:'XLE', SLB:'XLE',
+  // Industrials
+  CAT:'XLI', DE:'XLI', HON:'XLI', UPS:'XLI', BA:'XLI',
+  // Real Estate
+  AMT:'XLRE', PLD:'XLRE', SPG:'XLRE',
+  // Utilities
+  NEE:'XLU', DUK:'XLU', SO:'XLU',
+  // Materials
+  LIN:'XLB', APD:'XLB', SHW:'XLB',
+  // ETFs — use SPY as regime check
+  SPY:'SPY', QQQ:'XLK', IWM:'SPY', GLD:'SPY', TLT:'SPY',
+  XLK:'XLK', XLF:'XLF', XLE:'XLE', XLV:'XLV', XLY:'XLY', XLP:'XLP',
+}
+
+/* ── REGIME DATA — SPY + sector ETF vs their 50-day MAs ─────────────────────
+   Called once per ticker analysis to gate BUY signals during market downtrends
+   Returns: { spyPrice, spyMA50, sectorETF, sectorPrice, sectorMA50 }         */
+export async function fetchRegimeData(ticker) {
+  if (!hasKeys().fmp) return null
+  try {
+    const sectorETF = SECTOR_ETF_MAP[ticker?.toUpperCase()] || 'SPY'
+    const tickers = sectorETF === 'SPY' ? ['SPY'] : ['SPY', sectorETF]
+
+    const quotes = await Promise.all(
+      tickers.map(t => fmp(`/quote?symbol=${t}`, 60000))
+    )
+
+    const spyQuote    = Array.isArray(quotes[0]) ? quotes[0][0] : quotes[0]
+    const sectorQuote = tickers.length > 1
+      ? (Array.isArray(quotes[1]) ? quotes[1][0] : quotes[1])
+      : spyQuote
+
+    if (!spyQuote) return null
+
+    return {
+      sectorETF,
+      spyPrice:    spyQuote.price    || spyQuote.c || null,
+      spyMA50:     spyQuote.priceAvg50 || null,
+      sectorPrice: sectorQuote.price   || sectorQuote.c || null,
+      sectorMA50:  sectorQuote.priceAvg50 || null,
+    }
+  } catch { return null }
+}
+
 /* ══════════════════════════════════════════
-   MARKET MOVERS (biggest gainers/losers)
-══════════════════════════════════════════ */
 export async function fetchMarketMovers() {
   if (!hasKeys().fmp) return null
   try {
@@ -1218,7 +1275,7 @@ export function useTickerData() {
       const [candles, metrics, news, rec, earnings, profile, insider, ec,
              priceTarget, upgrades, peers, score, rating, dcf, sharesFloat,
              priceChange, executives, ownerEarnings, esg, transcript,
-             keyMetrics, incomeGrowth, cfGrowth, bsGrowth, revenueSegments, dividends] = await Promise.all([
+             keyMetrics, incomeGrowth, cfGrowth, bsGrowth, revenueSegments, dividends, regimeData] = await Promise.all([
         fetchCandles(ticker), fetchMetrics(ticker), fetchNews(ticker),
         fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
         fetchFMPInsider(ticker), fetchEarningsCalendar(ticker),
@@ -1229,7 +1286,7 @@ export function useTickerData() {
         fetchESG(ticker), fetchEarningsTranscript(ticker),
         fetchKeyMetrics(ticker), fetchIncomeGrowth(ticker),
         fetchCashFlowGrowth(ticker), fetchBalanceSheetGrowth(ticker),
-        fetchRevenueSegments(ticker), fetchDividends(ticker)
+        fetchRevenueSegments(ticker), fetchDividends(ticker), fetchRegimeData(ticker)
       ])
       // Compute MACD locally from candles — no extra API call
       const macd = Array.isArray(candles?.closes) && candles.closes.length >= 30 ? calcMACD(candles.closes) : null
@@ -1248,7 +1305,8 @@ export function useTickerData() {
         transcript: transcript || null,
         keyMetrics: keyMetrics || null, incomeGrowth: incomeGrowth || null,
         cfGrowth: cfGrowth || null, bsGrowth: bsGrowth || null,
-        revenueSegments: revenueSegments || null, dividends: dividends || null
+        revenueSegments: revenueSegments || null, dividends: dividends || null,
+        regimeData: regimeData || null
       })
     } catch { setError('Network error — check your connection and try again.') }
     finally  { setLoading(false) }

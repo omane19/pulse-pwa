@@ -99,9 +99,12 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   }
   // smartMoney: { insiderBuys, congressBuys, cluster } — optional 7th factor
   const hasSmartMoney = smartMoney?.insiderBuys != null
+  // Weights v28 — data-driven from 735-signal backtest (Mar 2026)
+  // Earnings cut 10%→6% (noise, +0.028 correlation), analyst boosted to 24% (strongest signal)
+  // Trend boosted 15%→20% (more predictive than momentum in mean-reversion markets)
   const W = hasSmartMoney
-    ? { momentum:.18, trend:.13, valuation:.18, sentiment:.13, analyst:.18, earnings:.08, smartmoney:.12 }
-    : { momentum:.20, trend:.15, valuation:.20, sentiment:.15, analyst:.20, earnings:.10 }
+    ? { momentum:.16, trend:.18, valuation:.16, sentiment:.12, analyst:.26, earnings:.06, smartmoney:.06 }
+    : { momentum:.18, trend:.20, valuation:.18, sentiment:.14, analyst:.24, earnings:.06 }
   const S = {}; const R = {}
   const [avgSent, scoredNews] = credibilitySentiment(news)
   const mom = calcMom(candles, quote)
@@ -249,15 +252,37 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const lb = avgSent > .08 ? 'Bullish' : avgSent < -.08 ? 'Bearish' : 'Neutral'
   S.sentiment = ss; R.sentiment = [`Credibility-weighted ${avgSent > 0 ? '+' : ''}${avgSent} (${lb}) · ${nw} articles`]
 
-  // Analyst — rec may be {current, history} (new format) or direct object (old)
+  // Analyst — CONTRARIAN scoring (backtest proved high consensus = lower future returns)
+  // High Wall St consensus means stock is already widely owned — limited new buyers
+  // Mixed/neutral consensus = underowned = more upside potential
   const recData = rec?.current || rec || {}
   let as_ = 0; const ar = []
   if (recData && Object.keys(recData).length) {
     const sb = recData.strongBuy || 0; const b_ = recData.buy || 0; const h = recData.hold || 0
     const s = recData.sell || 0; const ss2 = recData.strongSell || 0; const tot = sb + b_ + h + s + ss2
     if (tot > 0) {
-      as_ = Math.max(-1, Math.min(1, ((sb + b_ * .5) / tot - (ss2 + s * .5) / tot) * 2))
-      ar.push(`Wall St: ${sb} Strong Buy · ${b_} Buy · ${h} Hold · ${s} Sell · ${ss2} Strong Sell`)
+      // Raw bullish ratio 0→1
+      const bullishRatio = (sb + b_ * .5) / tot
+      const bearishRatio = (ss2 + s * .5) / tot
+      // Contrarian flip: extreme consensus (>80% bullish) is a slight negative
+      // Moderate bullish (50-75%) is a positive — not overcrowded yet
+      // Heavily bearish (<30% bullish) is a positive — beaten down, potential reversal
+      if (bullishRatio > 0.80) {
+        as_ = -0.15  // overcrowded — everyone already in
+        ar.push(`Wall St consensus overwhelmingly bullish (${Math.round(bullishRatio*100)}%) — overcrowded trade`)
+      } else if (bullishRatio > 0.60) {
+        as_ = 0.20   // healthy bullish — not overcrowded
+        ar.push(`Wall St: ${sb} Strong Buy · ${b_} Buy · ${h} Hold — healthy consensus`)
+      } else if (bullishRatio > 0.40) {
+        as_ = 0.10   // mixed — underowned, potential upside
+        ar.push(`Wall St mixed sentiment — underowned, potential catalyst upside`)
+      } else if (bearishRatio > 0.50) {
+        as_ = 0.25   // heavily shorted/bearish = contrarian BUY signal
+        ar.push(`Wall St bearish majority — contrarian opportunity if fundamentals hold`)
+      } else {
+        as_ = 0
+        ar.push(`Wall St: ${sb} Strong Buy · ${b_} Buy · ${h} Hold · ${s} Sell · ${ss2} Strong Sell`)
+      }
     }
   } else ar.push('No analyst coverage')
   // Price target upside boost
@@ -409,12 +434,29 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const totalFactors = Object.keys(S).length
   const trendOrMomPositive = S.trend > 0 || S.momentum > 0  // at least one directional factor positive
 
-  let rawVerdict = total >= .30 ? 'BUY' : total >= .05 ? 'HOLD' : 'AVOID'
+  // ── MARKET REGIME GATE (v28) ──────────────────────────────────────────────
+  // Backtest showed Jan 2025 cluster: 7 BUY signals all lost 25-30% same day (DeepSeek crash)
+  // Root cause: PULSE scored stocks without knowing the market was fragile
+  // Fix: if SPY (broad market) is below its 50-day MA, suppress BUY → HOLD
+  // Also check sector ETF if available via regimeData prop
+  const spyMA50    = extras?.regimeData?.spyPrice && extras?.regimeData?.spyMA50
+    ? extras.regimeData.spyPrice < extras.regimeData.spyMA50
+    : false
+  const sectorWeak = extras?.regimeData?.sectorPrice && extras?.regimeData?.sectorMA50
+    ? extras.regimeData.sectorPrice < extras.regimeData.sectorMA50
+    : false
+  const marketRegimeWeak = spyMA50 || sectorWeak
+  const regimeLabel = marketRegimeWeak
+    ? (spyMA50 ? 'SPY below 50d MA — market downtrend' : 'Sector ETF below 50d MA — sector downtrend')
+    : null
+
+  let rawVerdict = total >= .33 ? 'BUY' : total >= .05 ? 'HOLD' : 'AVOID'
   // Enforce BUY gates: must have factor breadth AND directional confirmation
   if (rawVerdict === 'BUY') {
     if (factorsPositive < 3)          rawVerdict = 'HOLD'  // too few factors agree
     if (!trendOrMomPositive)          rawVerdict = 'HOLD'  // buying against trend
     if (factorsNegative >= 4)         rawVerdict = 'HOLD'  // too many red flags
+    if (marketRegimeWeak)             rawVerdict = 'HOLD'  // market regime gate
   }
   // Enforce AVOID gates
   if (rawVerdict === 'HOLD' && total < -0.15) rawVerdict = 'AVOID'
@@ -443,7 +485,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const upside = extras?.priceTarget?.target && currentPrice ? parseFloat(((extras.priceTarget.target - currentPrice) / currentPrice * 100).toFixed(1)) : null
   return { scores: S, reasons: R, total: parseFloat(total.toFixed(3)), pct, verdict, color, upside,
     mom, avgSent, scoredNews, conviction, uncertainty, factorsAgree: factorsPositive, pe,
-    contradictions, inBearRegime }
+    contradictions, inBearRegime, marketRegimeWeak, regimeLabel }
 }
 
 export function smartSummary(title, body) {
