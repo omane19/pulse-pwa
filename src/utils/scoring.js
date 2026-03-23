@@ -252,24 +252,50 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const lb = avgSent > .08 ? 'Bullish' : avgSent < -.08 ? 'Bearish' : 'Neutral'
   S.sentiment = ss; R.sentiment = [`Credibility-weighted ${avgSent > 0 ? '+' : ''}${avgSent} (${lb}) · ${nw} articles`]
 
-  // Analyst — CONTRARIAN scoring (backtest proved high consensus = lower future returns)
-  // High Wall St consensus means stock is already widely owned — limited new buyers
-  // Mixed/neutral consensus = underowned = more upside potential
+  // Analyst — context-aware consensus scoring
+  // Rule: high consensus is only a red flag when fundamentals DON'T justify it
+  // If growth is strong, consensus is earned — not a crowding problem
+  // If growth is weak/expensive, high consensus = overcrowded = mean-reversion risk
   const recData = rec?.current || rec || {}
   let as_ = 0; const ar = []
+
+  // Fundamentals context — needed to interpret consensus correctly
+  const _revenueGrowth = metrics?.revenueGrowthYoY || null  // % YoY
+  const _pegRatio      = metrics?.pegRatio || null
+  const _peRatio       = metrics?.peTTM > 0 ? metrics.peTTM : null
+  // "Strong fundamentals" = high revenue growth OR reasonable PEG
+  // These are stocks where Wall St consensus is likely earned, not blind
+  const strongFundamentals = (
+    (_revenueGrowth != null && _revenueGrowth > 20) ||  // >20% revenue growth
+    (_pegRatio != null && _pegRatio > 0 && _pegRatio < 1.5)  // PEG under 1.5 = fairly priced for growth
+  )
+  // "Expensive without growth" = high P/E + weak/no revenue growth
+  const expensiveWithoutGrowth = (
+    _peRatio != null && _peRatio > 30 &&
+    (_revenueGrowth == null || _revenueGrowth < 10)
+  )
+
   if (recData && Object.keys(recData).length) {
     const sb = recData.strongBuy || 0; const b_ = recData.buy || 0; const h = recData.hold || 0
     const s = recData.sell || 0; const ss2 = recData.strongSell || 0; const tot = sb + b_ + h + s + ss2
     if (tot > 0) {
-      // Raw bullish ratio 0→1
       const bullishRatio = (sb + b_ * .5) / tot
       const bearishRatio = (ss2 + s * .5) / tot
-      // Contrarian flip: extreme consensus (>80% bullish) is a slight negative
-      // Moderate bullish (50-75%) is a positive — not overcrowded yet
-      // Heavily bearish (<30% bullish) is a positive — beaten down, potential reversal
+
       if (bullishRatio > 0.80) {
-        as_ = -0.15  // overcrowded — everyone already in
-        ar.push(`Wall St consensus overwhelmingly bullish (${Math.round(bullishRatio*100)}%) — overcrowded trade`)
+        if (strongFundamentals) {
+          // High consensus + strong fundamentals = analysts are right, not just crowded
+          as_ = 0.25
+          ar.push(`Wall St ${Math.round(bullishRatio*100)}% bullish — consensus backed by strong fundamentals`)
+        } else if (expensiveWithoutGrowth) {
+          // High consensus + expensive + weak growth = crowding risk is real
+          as_ = -0.20
+          ar.push(`Wall St ${Math.round(bullishRatio*100)}% bullish but valuation stretched without growth — crowding risk`)
+        } else {
+          // High consensus, fundamentals neutral — mild positive, flag the crowding
+          as_ = 0.05
+          ar.push(`Wall St ${Math.round(bullishRatio*100)}% bullish — consensus high, watch for crowding`)
+        }
       } else if (bullishRatio > 0.60) {
         as_ = 0.20   // healthy bullish — not overcrowded
         ar.push(`Wall St: ${sb} Strong Buy · ${b_} Buy · ${h} Hold — healthy consensus`)
@@ -277,7 +303,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
         as_ = 0.10   // mixed — underowned, potential upside
         ar.push(`Wall St mixed sentiment — underowned, potential catalyst upside`)
       } else if (bearishRatio > 0.50) {
-        as_ = 0.25   // heavily shorted/bearish = contrarian BUY signal
+        as_ = 0.25   // heavily bearish = contrarian BUY if fundamentals hold
         ar.push(`Wall St bearish majority — contrarian opportunity if fundamentals hold`)
       } else {
         as_ = 0
