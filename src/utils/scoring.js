@@ -48,8 +48,11 @@ export function calcMom(candles, quote) {
   const closes = candles.closes
   const price = quote.c
   if (!price || !Array.isArray(closes) || closes.length === 0) return out
-  if (closes.length >= 21) out['1m'] = parseFloat(((price / closes[closes.length - 21] - 1) * 100).toFixed(2))
-  if (closes.length >= 61) out['3m'] = parseFloat(((price / closes[closes.length - 61] - 1) * 100).toFixed(2))
+  if (closes.length >= 21)  out['1m']  = parseFloat(((price / closes[closes.length - 21]  - 1) * 100).toFixed(2))
+  if (closes.length >= 61)  out['3m']  = parseFloat(((price / closes[closes.length - 61]  - 1) * 100).toFixed(2))
+  if (closes.length >= 126) out['6m']  = parseFloat(((price / closes[closes.length - 126] - 1) * 100).toFixed(2))
+  if (closes.length >= 252) out['1y']  = parseFloat(((price / closes[closes.length - 252] - 1) * 100).toFixed(2))
+  // 1-day kept for display and volume-direction signal only — NOT used in scoring
   out['1d'] = quote.dp || 0
   if (closes.length >= 15) {
     const diffs = (Array.isArray(closes) ? closes : []).slice(-15).map((c, i, arr) => i === 0 ? 0 : c - arr[i - 1]).slice(1)
@@ -112,33 +115,51 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const [avgSent, scoredNews] = credibilitySentiment(news)
   const mom = calcMom(candles, quote)
 
-  // Momentum
+  // Momentum — 1m/3m/6m/1y only. 1-day removed (noise, reverses constantly)
+  // Weights: 1m=30%, 3m=35%, 6m=20%, 1y=15% — medium-term most predictive
   let ms = 0; const mr = []
-  if ('1d' in mom) { ms += Math.max(-.3, Math.min(.3, mom['1d'] / 5)); mr.push(`1-day ${mom['1d'] > 0 ? '+' : ''}${parseFloat(mom['1d'].toFixed(2))}%`) }
-  if ('1m' in mom) { ms += Math.max(-.4, Math.min(.4, mom['1m'] / 15)); mr.push(`1-month ${mom['1m'] > 0 ? '+' : ''}${mom['1m']}%`) }
-  if ('3m' in mom) { ms += Math.max(-.3, Math.min(.3, mom['3m'] / 20)); mr.push(`3-month ${mom['3m'] > 0 ? '+' : ''}${mom['3m']}%`) }
+  if ('1m' in mom) {
+    const w = Math.max(-.35, Math.min(.35, mom['1m'] / 15))
+    ms += w
+    mr.push(`1-month ${mom['1m'] > 0 ? '+' : ''}${mom['1m']}%`)
+  }
+  if ('3m' in mom) {
+    const w = Math.max(-.35, Math.min(.35, mom['3m'] / 20))
+    ms += w
+    mr.push(`3-month ${mom['3m'] > 0 ? '+' : ''}${mom['3m']}%`)
+  }
+  if ('6m' in mom) {
+    const w = Math.max(-.25, Math.min(.25, mom['6m'] / 30))
+    ms += w
+    mr.push(`6-month ${mom['6m'] > 0 ? '+' : ''}${mom['6m']}%`)
+  }
+  if ('1y' in mom) {
+    const w = Math.max(-.20, Math.min(.20, mom['1y'] / 50))
+    ms += w
+    mr.push(`1-year ${mom['1y'] > 0 ? '+' : ''}${mom['1y']}%`)
+  }
   if ('rsi' in mom) {
     const rsi = mom['rsi']
-    const inDowntrend = (mom['3m'] || 0) < -15  // deeply falling = falling knife, not a bounce
+    const inDowntrend = (mom['6m'] || mom['3m'] || 0) < -20  // use 6m for more reliable downtrend signal
     if (rsi < 30 && !inDowntrend) { ms += .3; mr.push(`RSI ${rsi} — oversold, bounce potential`) }
     else if (rsi < 30 && inDowntrend) { ms -= .1; mr.push(`RSI ${rsi} — oversold but in downtrend (falling knife risk)`) }
     else if (rsi > 70) { ms -= .2; mr.push(`RSI ${rsi} — overbought, pullback risk`) }
     else mr.push(`RSI ${rsi} — neutral`)
   }
-  // Volume spike — direction-aware confirmation
+  // Volume spike — direction-aware confirmation using 1m trend context not 1-day
   const vols = Array.isArray(candles?.volumes) ? candles.volumes : []
   if (vols.length >= 20) {
     const recent = vols[vols.length - 1] || 0
     const avgVol = (Array.isArray(vols) ? vols : []).slice(-20, -1).reduce((a, b) => a + b, 0) / 19
     if (avgVol > 0) {
       const volRatio = recent / avgVol
-      const dayUp = (mom['1d'] || 0) >= 0  // was today up or down?
+      const trendUp = (mom['1m'] || 0) >= 0  // use 1m trend, not 1-day noise
       if (volRatio >= 2.5) {
-        if (dayUp)  { ms += 0.3;  mr.push(`🔥 Volume ${volRatio.toFixed(1)}× avg on UP day — strong buying`) }
-        else        { ms -= 0.3;  mr.push(`🔥 Volume ${volRatio.toFixed(1)}× avg on DOWN day — distribution signal`) }
+        if (trendUp)  { ms += 0.3;  mr.push(`🔥 Volume ${volRatio.toFixed(1)}× avg — strong buying pressure`) }
+        else          { ms -= 0.3;  mr.push(`🔥 Volume ${volRatio.toFixed(1)}× avg — distribution signal`) }
       } else if (volRatio >= 1.5) {
-        if (dayUp)  { ms += 0.15; mr.push(`Volume ${volRatio.toFixed(1)}× avg — above-normal buying`) }
-        else        { ms -= 0.15; mr.push(`Volume ${volRatio.toFixed(1)}× avg on down day — selling pressure`) }
+        if (trendUp)  { ms += 0.15; mr.push(`Volume ${volRatio.toFixed(1)}× avg — above-normal buying`) }
+        else          { ms -= 0.15; mr.push(`Volume ${volRatio.toFixed(1)}× avg — selling pressure`) }
       } else if (volRatio < 0.5) { ms -= 0.1; mr.push(`Low volume — weak conviction`) }
     }
   }
@@ -448,8 +469,8 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   // ── MARKET REGIME WEIGHTING ──
   // Detect regime from SPY-like signals: if the asset's own 3m momentum is strongly negative
   // we're likely in a bear regime for this stock — weight trend/momentum more heavily
-  const ownMom3m = mom['3m'] || 0
-  const inBearRegime = ownMom3m < -15 && (S.trend < -0.2)
+  const ownMom6m = mom['6m'] || mom['3m'] || 0
+  const inBearRegime = ownMom6m < -20 && (S.trend < -0.2)
   // Bear regime: same 6 factors as normal, reweighted toward trend+momentum
   // Removed smartmoney from bear weights — bear stocks rarely have insider buys,
   // so including it would silently lose 10% of weight when data is absent

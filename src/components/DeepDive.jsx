@@ -35,6 +35,8 @@ function ChartExplainer({ result, ma50, price }) {
   const rsi = result.mom?.rsi
   const mom1m = result.mom?.['1m']
   const mom3m = result.mom?.['3m']
+  const mom6m = result.mom?.['6m']
+  const mom1y = result.mom?.['1y']
   const aboveMA = price && ma50 ? price > ma50 : null
 
   const signals = []
@@ -75,8 +77,28 @@ function ChartExplainer({ result, ma50, price }) {
       ? `Exceptional 3-month run. Institutions have been accumulating. This kind of move often pauses but the underlying trend is strong.`
       : mom3m > 0
       ? `Positive 3-month trend confirms the medium-term uptrend. Dips toward the 50-day MA are likely buy opportunities in an uptrend like this.`
-      : `Negative 3-month trend — the medium-term trend is down. Even if the stock bounces short-term, the broader trend is working against buyers. Requires a thesis change or trend reversal signal.`,
+      : `Negative 3-month trend — the medium-term trend is down. Even if the stock bounces short-term, the broader trend is working against buyers.`,
     color: mom3m > 0 ? '#00C805' : '#FF5000'
+  })
+  if (mom6m != null) signals.push({
+    icon: mom6m > 0 ? '📈' : '📉',
+    label: `6-Month: ${mom6m > 0 ? '+' : ''}${mom6m}%`,
+    detail: mom6m > 30
+      ? `Strong 6-month trend — institutional positioning is clearly bullish. This is the most reliable momentum window for swing trading.`
+      : mom6m > 0
+      ? `Positive 6-month trend. The stock has been in a sustained uptrend — pullbacks to support are likely buying opportunities.`
+      : `Negative 6-month trend. The stock has been in a distribution phase. Requires a clear reversal signal before entering.`,
+    color: mom6m > 0 ? '#00C805' : '#FF5000'
+  })
+  if (mom1y != null) signals.push({
+    icon: mom1y > 0 ? '🏆' : '⚠️',
+    label: `1-Year: ${mom1y > 0 ? '+' : ''}${mom1y}%`,
+    detail: mom1y > 50
+      ? `Exceptional 1-year return. The stock has been a strong performer. Watch for mean reversion, but the long-term trend is your friend.`
+      : mom1y > 0
+      ? `Positive 1-year return. Long-term trend is intact. This is the anchor for position sizing — trade with the annual trend, not against it.`
+      : `Negative 1-year return. The stock has destroyed value over 12 months. Requires strong fundamental catalyst to justify a position.`,
+    color: mom1y > 0 ? '#00C805' : '#FF5000'
   })
 
   return (
@@ -217,9 +239,9 @@ function AnalysisBrief({ ticker, company, sector, price, result, ma50, metrics, 
   const rsiNote=rsi>70?`RSI ${rsi} — overbought, pullback risk`:rsi<30?`RSI ${rsi} — oversold, bounce potential`:`RSI ${rsi} — neutral`
   const sections = [
     ['WHAT THIS COMPANY DOES', `${company} operates in the ${sector||'N/A'} sector. Ticker: ${ticker}.`],
-    ['WHAT IS DRIVING THE PRICE', `Price is ${maNote}. ${rsiNote}. 1-month: ${mom?.['1m']??'N/A'}% · 3-month: ${mom?.['3m']??'N/A'}%.`],
+    ['WHAT IS DRIVING THE PRICE', `Price is ${maNote}. ${rsiNote}. 1-month: ${mom?.['1m']??'N/A'}% · 3-month: ${mom?.['3m']??'N/A'}% · 6-month: ${mom?.['6m']??'N/A'}% · 1-year: ${mom?.['1y']??'N/A'}%.`],
     ['STRENGTHS', [
-      `Momentum: ${mom?.['1m']??'N/A'}% (1M) · ${mom?.['3m']??'N/A'}% (3M)`,
+      `Momentum: ${mom?.['1m']??'N/A'}% (1M) · ${mom?.['3m']??'N/A'}% (3M) · ${mom?.['6m']??'N/A'}% (6M) · ${mom?.['1y']??'N/A'}% (1Y)`,
       recTxt||null, earnTxt||null,
       `News sentiment: ${result.avgSent>0?'+':''}${result.avgSent} (${result.avgSent>.08?'positive':result.avgSent<-.08?'negative':'neutral'}) from ${news?.length||0} articles`,
     ].filter(Boolean)],
@@ -561,7 +583,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
             <div className="price-company">
               {data.profile?.name||TICKER_NAMES[ticker]||ticker}
               {data.profile?.finnhubIndustry&&` · ${data.profile.finnhubIndustry}`}
-              {data.profile?.marketCapitalization&&` · ${fmtMcap(data.profile.marketCapitalization)}`}
+              {data.profile?.marketCapitalization&&` · ${fmtMcap(data.profile.marketCapitalization * 1e6)}`}
             </div>
             <div className="price-big" style={{color}}>${price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
             <div className={`price-change ${chg>=0?'pos':'neg'}`}>{chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}% today</div>
