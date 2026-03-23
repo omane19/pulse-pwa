@@ -1,8 +1,11 @@
 import { SOURCE_TIERS } from './constants.js'
 
 // ── Simple sentiment (AFINN-style word list, no external lib) ────
-const POS_WORDS = new Set(["beat","beats","surge","surged","soar","soared","rally","rallied","profit","profits","gain","gains","growth","grew","strong","record","upgrade","upgraded","buy","outperform","raised","raise","exceeds","exceeded","positive","bullish","recovery","recovered","expand","expanding","revenue","solid","robust","better","improved","improvement","boost","boosted","higher","rise","rose","increase","increased","top","topped","above","ahead"])
-const NEG_WORDS = new Set(["miss","misses","missed","fall","falls","fell","drop","dropped","decline","declined","loss","losses","weak","weaker","cut","cuts","downgrade","downgraded","sell","underperform","lower","below","warning","concern","risk","risks","disappointing","disappointed","miss","missed","reduce","reduced","layoff","layoffs","restructure","debt","lawsuit","investigation","fraud","recall","suspended","suspension","bankruptcy","negative","bearish","shortage","supply","demand"])
+const POS_WORDS = new Set(["beat","beats","surge","surged","soar","soared","rally","rallied","profit","profits","gain","gains","growth","grew","strong","record","upgrade","upgraded","buy","outperform","raised","raise","exceeds","exceeded","positive","bullish","recovery","recovered","expand","expanding","revenue","solid","robust","better","improved","improvement","boost","boosted","higher","rise","rose","increase","increased","top","topped","above","ahead","breakout","accelerating","momentum","blowout","outpaced"])
+// NEG_WORDS v29 — removed generic business words: "risk","demand","supply","debt","concern","shortage"
+// These appear in every AI/tech/pharma article regardless of tone and were killing scores unfairly
+// Only keeping words that are unambiguously negative in a financial context
+const NEG_WORDS = new Set(["miss","misses","missed","fall","falls","fell","drop","dropped","decline","declined","loss","losses","weak","weaker","cut","cuts","downgrade","downgraded","sell","underperform","lower","below","warning","disappointing","disappointed","reduce","reduced","layoff","layoffs","restructure","lawsuit","investigation","fraud","recall","suspended","suspension","bankruptcy","negative","bearish","shortfall","write-down","impairment","defaulted","delinquent","breach","violation","penalty","fine","subpoena","restatement"])
 
 export function simpleSentiment(text) {
   if (!text) return 0
@@ -203,13 +206,17 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     // Fallback: raw P/E with growth context
     if (pe < 12)       { vs += .6;  vr.push(`P/E ${pe.toFixed(1)}× — deep value`) }
     else if (pe < 20)  { vs += .3;  vr.push(`P/E ${pe.toFixed(1)}× — fair value`) }
-    else if (pe < 35)  { vs -= .2;  vr.push(`P/E ${pe.toFixed(1)}× — growth premium`) }
+    else if (pe < 35)  { vs -= .1;  vr.push(`P/E ${pe.toFixed(1)}× — growth premium`) }
     else {
-      // High P/E ok if revenue growing fast (>20%)
-      if (revenueGrowth && revenueGrowth > 20) {
-        vs -= .15; vr.push(`P/E ${pe.toFixed(1)}× — high but revenue +${revenueGrowth.toFixed(0)}% YoY`)
+      // High P/E — must check growth before penalizing
+      if (revenueGrowth && revenueGrowth > 40) {
+        vs += 0.1; vr.push(`P/E ${pe.toFixed(1)}× — high but hypergrowth +${revenueGrowth.toFixed(0)}% justifies premium`)
+      } else if (revenueGrowth && revenueGrowth > 20) {
+        vs -= .05; vr.push(`P/E ${pe.toFixed(1)}× — growth premium, revenue +${revenueGrowth.toFixed(0)}% YoY`)
+      } else if (revenueGrowth && revenueGrowth > 10) {
+        vs -= .25; vr.push(`P/E ${pe.toFixed(1)}× — elevated, moderate growth only`)
       } else {
-        vs -= .55; vr.push(`P/E ${pe.toFixed(1)}× — expensive, miss-prone`)
+        vs -= .45; vr.push(`P/E ${pe.toFixed(1)}× — expensive without strong growth`)
       }
     }
   } else vr.push('P/E unavailable')
@@ -417,22 +424,24 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   }
 
   // ── CONTRADICTION PENALTY ──
-  // When key directional signals disagree, confidence must drop
+  // Only fire when signals genuinely conflict AND fundamentals don't explain the divergence
+  // Do NOT penalize high-growth stocks where analyst optimism is justified despite price weakness
+  const highGrowthStock = (metrics?.revenueGrowthYoY || 0) > 20
   let contradictionPenalty = 0; const contradictions = []
-  if (S.trend < -0.3 && S.analyst > 0.5) {
+  if (S.trend < -0.3 && S.analyst > 0.5 && !highGrowthStock) {
     contradictionPenalty += 0.08
     contradictions.push('Price downtrend conflicts with analyst optimism')
   }
   if (S.momentum < -0.3 && S.earnings > 0.4) {
-    contradictionPenalty += 0.06
+    contradictionPenalty += 0.04
     contradictions.push('Weak momentum despite strong earnings')
   }
-  if (S.sentiment < -0.3 && S.analyst > 0.3) {
-    contradictionPenalty += 0.05
+  if (S.sentiment < -0.3 && S.analyst > 0.3 && !highGrowthStock) {
+    contradictionPenalty += 0.04
     contradictions.push('News sentiment contradicts analyst ratings')
   }
   if (S.trend < -0.5 && S.valuation > 0.4) {
-    contradictionPenalty += 0.06
+    contradictionPenalty += 0.05
     contradictions.push('Value signal but price in confirmed downtrend')
   }
 
@@ -503,8 +512,8 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     if (factorsNegative >= 4)         rawVerdict = 'HOLD'  // too many red flags
     if (marketRegimeWeak)             rawVerdict = 'HOLD'  // market regime gate
   }
-  // Enforce AVOID gates
-  if (rawVerdict === 'HOLD' && total < -0.15) rawVerdict = 'AVOID'
+  // Enforce AVOID gates — only truly negative total scores
+  if (rawVerdict === 'HOLD' && total < -0.20) rawVerdict = 'AVOID'
 
   const pct = Math.round((total + 1) / 2 * 100 * 10) / 10
   const verdict = rawVerdict
