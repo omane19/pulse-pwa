@@ -363,7 +363,7 @@ function ScoreSparkline({ ticker, currentScore }) {
 }
 
 function VerdictCard({ result, ticker }) {
-  const {pct,verdict,color,conviction,factorsAgree,reasons,scores,mom,uncertainty,marketRegimeWeak,regimeLabel}=result
+  const {pct,verdict,color,conviction,factorsAgree,reasons,scores,mom,uncertainty,marketRegimeWeak,regimeLabel,isQualityDip,qualityDipLabel}=result
   const e={BUY:'●',HOLD:'◆',AVOID:'✕'}[verdict]
   const allReasons=Object.values(reasons).flat()
   const nowSigs=[]
@@ -381,6 +381,11 @@ function VerdictCard({ result, ticker }) {
       {marketRegimeWeak && (
         <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'#FF500015',border:'1px solid #FF500044',borderRadius:8,padding:'4px 10px',margin:'8px auto 0',fontSize:'0.68rem',fontWeight:600,color:'#FF8060',letterSpacing:'0.5px'}}>
           ⚠ MARKET REGIME GATE · {regimeLabel || 'Market in downtrend — BUY suppressed'}
+        </div>
+      )}
+      {isQualityDip && (
+        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'#00C80515',border:'1px solid #00C80544',borderRadius:8,padding:'4px 10px',margin:'6px auto 0',fontSize:'0.68rem',fontWeight:600,color:'#00C805',letterSpacing:'0.5px'}}>
+          💎 {qualityDipLabel || 'Quality Dip — strong business at a discount'}
         </div>
       )}
       <div style={{background:'#2E2E2E',borderRadius:3,height:3,width:160,margin:'12px auto 7px',overflow:'hidden'}}>

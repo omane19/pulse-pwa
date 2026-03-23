@@ -526,6 +526,50 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     : null
 
   let rawVerdict = total >= .33 ? 'BUY' : total >= .05 ? 'HOLD' : 'AVOID'
+
+  // ── QUALITY DIP DETECTION (v29) ──────────────────────────────────────────
+  // "Buy great companies when they're cheap" — Buffett / Lynch logic
+  // When fundamentals are strong BUT price is down, that's an opportunity not a warning
+  // Conditions: strong business + significant price drop + not in freefall + no earnings miss
+  const pctFromHigh52 = quote?.yearHigh && quote?.c
+    ? (quote.c - quote.yearHigh) / quote.yearHigh * 100
+    : null
+  const recentEarningsMiss = earn?.length
+    ? earn.slice(0, 2).some(q => q.actual != null && q.estimate != null && q.actual < q.estimate * 0.95)
+    : false
+  const rsiValue = mom['rsi'] || 50
+  const notInFreefall = rsiValue > 25  // RSI below 25 = genuine panic, wait for stabilization
+  const priceDownFromHigh = pctFromHigh52 != null && pctFromHigh52 < -15  // >15% off highs
+  const momentumNotCrashing = (mom['1m'] || 0) > -20  // not dropping more than 20% in a month
+
+  const isQualityDip = (
+    strongFundamentals &&          // revenue >20% growth OR PEG < 1.5
+    priceDownFromHigh &&            // >15% below 52-week high
+    notInFreefall &&                // RSI not below 25
+    momentumNotCrashing &&          // not in a crash
+    !recentEarningsMiss &&          // company didn't just miss earnings
+    S.earnings >= 0 &&              // earnings factor not negative
+    S.analyst > 0                   // analysts still constructive on the business
+  )
+
+  // Quality Dip bonus — add to total score before verdict
+  let qualityDipBonus = 0
+  let qualityDipLabel = null
+  if (isQualityDip) {
+    // Scale bonus by how far below highs — deeper dip on strong company = bigger opportunity
+    if (pctFromHigh52 < -40)      { qualityDipBonus = 0.22; qualityDipLabel = `Quality Dip — down ${Math.abs(pctFromHigh52).toFixed(0)}% from high, strong fundamentals` }
+    else if (pctFromHigh52 < -25) { qualityDipBonus = 0.16; qualityDipLabel = `Quality Dip — down ${Math.abs(pctFromHigh52).toFixed(0)}% from high, business intact` }
+    else                           { qualityDipBonus = 0.10; qualityDipLabel = `Quality Dip — pullback on strong business` }
+  }
+  const adjustedTotal = total + qualityDipBonus
+
+  // Re-evaluate verdict with quality dip bonus applied
+  if (qualityDipBonus > 0) {
+    if      (adjustedTotal >= .33) rawVerdict = 'BUY'
+    else if (adjustedTotal >= .05) rawVerdict = 'HOLD'
+    else                           rawVerdict = 'AVOID'
+  }
+
   // Enforce BUY gates: must have factor breadth AND directional confirmation
   if (rawVerdict === 'BUY') {
     if (factorsPositive < 3)          rawVerdict = 'HOLD'  // too few factors agree
@@ -534,9 +578,11 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     if (marketRegimeWeak)             rawVerdict = 'HOLD'  // market regime gate
   }
   // Enforce AVOID gates — only truly negative total scores
-  if (rawVerdict === 'HOLD' && total < -0.20) rawVerdict = 'AVOID'
+  // Quality dip stocks with strong fundamentals should never show AVOID — worst case is HOLD
+  if (rawVerdict === 'HOLD' && adjustedTotal < -0.20) rawVerdict = 'AVOID'
+  if (rawVerdict === 'AVOID' && isQualityDip) rawVerdict = 'HOLD'  // quality dip floor is HOLD
 
-  const pct = Math.round((total + 1) / 2 * 100 * 10) / 10
+  const pct = Math.round((adjustedTotal + 1) / 2 * 100 * 10) / 10
   const verdict = rawVerdict
   const color = verdict === 'BUY' ? '#00C805' : verdict === 'HOLD' ? '#FFD700' : '#FF5000'
 
@@ -556,11 +602,13 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   if (S.momentum < -.2) uncertainty.push('Price momentum is weak')
   if (nw < 3) uncertainty.push('Limited news coverage — signal unreliable')
   if (inBearRegime) uncertainty.push('Bear regime detected — weights shifted to trend/momentum')
+  if (isQualityDip) uncertainty.push(`${qualityDipLabel}`)
 
   const upside = extras?.priceTarget?.target && currentPrice ? parseFloat(((extras.priceTarget.target - currentPrice) / currentPrice * 100).toFixed(1)) : null
-  return { scores: S, reasons: R, total: parseFloat(total.toFixed(3)), pct, verdict, color, upside,
+  return { scores: S, reasons: R, total: parseFloat(adjustedTotal.toFixed(3)), pct, verdict, color, upside,
     mom, avgSent, scoredNews, conviction, uncertainty, factorsAgree: factorsPositive, pe,
-    contradictions, inBearRegime, marketRegimeWeak, regimeLabel }
+    contradictions, inBearRegime, marketRegimeWeak, regimeLabel,
+    isQualityDip, qualityDipLabel, qualityDipBonus }
 }
 
 export function smartSummary(title, body) {
