@@ -490,40 +490,8 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const totalFactors = Object.keys(S).length
   const trendOrMomPositive = S.trend > 0 || S.momentum > 0  // at least one directional factor positive
 
-  // ── MARKET REGIME GATE (v28) ──────────────────────────────────────────────
-  // Backtest showed Jan 2025 cluster: 7 BUY signals all lost 25-30% same day (DeepSeek crash)
-  // Root cause: PULSE scored stocks without knowing the market was fragile
-  // Fix: if SPY (broad market) is below its 50-day MA, suppress BUY → HOLD
-  // EXEMPTIONS: commodities, bonds, volatility, inverse ETFs — these are uncorrelated
-  // or inversely correlated with SPY, so gating them on SPY is backwards logic
-  const SPY_EXEMPT = new Set([
-    // Precious metals
-    'GLD','IAU','SLV','SIVR','SGOL','PHYS','PSLV',
-    // Other commodities
-    'USO','UNG','DBA','PDBC','GSG','DJP',
-    // Bonds / rates
-    'TLT','IEF','SHY','BND','AGG','LQD','HYG','TIP','GOVT',
-    // Volatility
-    'VXX','UVXY','SVXY',
-    // Inverse ETFs
-    'SH','PSQ','DOG','SDS','QID','SQQQ','SPXS','SPXU',
-    // Bitcoin / crypto ETFs (uncorrelated to SPY regime)
-    'IBIT','FBTC','GBTC','BITO',
-    // Commodity miners can stay gated — they move with equities
-  ])
-  const tickerUpper = (extras?.ticker || '').toUpperCase()
-  const isSpyExempt = SPY_EXEMPT.has(tickerUpper)
-
-  const spyMA50    = !isSpyExempt && extras?.regimeData?.spyPrice && extras?.regimeData?.spyMA50
-    ? extras.regimeData.spyPrice < extras.regimeData.spyMA50
-    : false
-  const sectorWeak = !isSpyExempt && extras?.regimeData?.sectorPrice && extras?.regimeData?.sectorMA50
-    ? extras.regimeData.sectorPrice < extras.regimeData.sectorMA50
-    : false
-  const marketRegimeWeak = spyMA50 || sectorWeak
-  const regimeLabel = marketRegimeWeak
-    ? (spyMA50 ? 'SPY below 50d MA — market downtrend' : 'Sector ETF below 50d MA — sector downtrend')
-    : null
+  const marketRegimeWeak = false  // SPY gate removed v29 — quality dip signal handles weak market context
+  const regimeLabel = null
 
   let rawVerdict = total >= .33 ? 'BUY' : total >= .05 ? 'HOLD' : 'AVOID'
 
@@ -575,7 +543,6 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     if (factorsPositive < 3)          rawVerdict = 'HOLD'  // too few factors agree
     if (!trendOrMomPositive)          rawVerdict = 'HOLD'  // buying against trend
     if (factorsNegative >= 4)         rawVerdict = 'HOLD'  // too many red flags
-    if (marketRegimeWeak)             rawVerdict = 'HOLD'  // market regime gate
   }
   // Enforce AVOID gates — only truly negative total scores
   // Quality dip stocks with strong fundamentals should never show AVOID — worst case is HOLD

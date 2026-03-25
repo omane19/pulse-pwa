@@ -402,24 +402,67 @@ export default function GlobalImpact({ onNavigate }) {
       )}
 
       {/* Macro sub-tabs */}
-      {macroData && (
-        <div style={{ marginBottom:12 }}>
-          <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, scrollbarWidth:'none', marginBottom:12 }}>
-            {TABS.map(t => (
-              <button key={t.id} onClick={() => setMacroTab(t.id)} style={{
-                padding:'6px 14px', borderRadius:20, border:`1px solid ${macroTab===t.id ? CYAN : G4}`,
-                background: macroTab===t.id ? `${CYAN}15` : 'transparent',
-                color: macroTab===t.id ? CYAN : G1, fontFamily:'var(--font-mono)',
-                fontSize:'0.62rem', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0
-              }}>{t.label}</button>
-            ))}
+      {macroData && (() => {
+        // Build macro synthesis sentence
+        const yc = macroData.yieldCurve
+        const ed = macroData.econData
+        const gdp = ed?.gdp?.value
+        const cpi = ed?.cpi?.value
+        const unemp = ed?.unemploy?.value
+        const inverted = yc?.inverted
+
+        let environment = ''
+        let implication = ''
+
+        if (inverted && cpi != null && cpi > 4) {
+          environment = 'Yield curve inverted with elevated inflation'
+          implication = 'Historically the most challenging environment — recession risk elevated. Favor cash, short-term bonds, and defensive sectors (healthcare, utilities, consumer staples). Avoid high-multiple growth stocks.'
+        } else if (inverted && gdp != null && gdp < 1) {
+          environment = 'Yield curve inverted with slowing growth'
+          implication = 'Recession signal active. Quality matters more than growth. Rotate toward companies with strong FCF and low debt. Consider defensive positioning.'
+        } else if (inverted) {
+          environment = 'Yield curve inverted'
+          implication = 'Inverted curve has preceded recessions historically. Not guaranteed, but worth reducing risk exposure on speculative positions.'
+        } else if (cpi != null && cpi > 4 && gdp != null && gdp > 2) {
+          environment = 'High inflation with strong growth (stagflation risk)'
+          implication = 'Fed likely to hold rates high. Bad for bonds and rate-sensitive stocks (REITs, utilities). Energy and commodities tend to outperform. Value over growth.'
+        } else if (cpi != null && cpi <= 3 && gdp != null && gdp >= 2) {
+          environment = 'Healthy macro — low inflation, solid growth'
+          implication = 'Goldilocks environment historically favorable for equities broadly. Growth stocks and cyclicals tend to lead. Good backdrop for BUY signals across sectors.'
+        } else if (gdp != null && gdp < 1) {
+          environment = 'Slowing growth'
+          implication = 'Economic momentum is fading. Quality and defensiveness matter. Focus on companies with durable earnings and pricing power.'
+        } else {
+          environment = 'Mixed macro signals'
+          implication = 'No clear macro tailwind or headwind. Stock selection matters more than broad sector calls. Focus on individual company fundamentals.'
+        }
+
+        return (
+          <div style={{ marginBottom:12 }}>
+            {(environment || implication) && (
+              <div style={{ background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', color:CYAN, marginBottom:8 }}>🌐 Macro Environment</div>
+                <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#fff', marginBottom:6 }}>{environment}</div>
+                <div style={{ fontSize:'0.78rem', color:G1, lineHeight:1.75 }}>{implication}</div>
+              </div>
+            )}
+            <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, scrollbarWidth:'none', marginBottom:12 }}>
+              {TABS.map(t => (
+                <button key={t.id} onClick={() => setMacroTab(t.id)} style={{
+                  padding:'6px 14px', borderRadius:20, border:`1px solid ${macroTab===t.id ? CYAN : G4}`,
+                  background: macroTab===t.id ? `${CYAN}15` : 'transparent',
+                  color: macroTab===t.id ? CYAN : G1, fontFamily:'var(--font-mono)',
+                  fontSize:'0.62rem', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0
+                }}>{t.label}</button>
+              ))}
+            </div>
+            {macroTab === 'sectors'  && <SectorHeatmap sectorData={macroData.sectorData} onNavigate={onNavigate} />}
+            {macroTab === 'calendar' && <EconomicCalendar events={macroData.events} notify={notify} permission="denied" />}
+            {macroTab === 'yield'    && <YieldCurveCard yieldCurve={macroData.yieldCurve} />}
+            {macroTab === 'macro'    && <MacroIndicators econData={macroData.econData} />}
           </div>
-          {macroTab === 'sectors'  && <SectorHeatmap sectorData={macroData.sectorData} onNavigate={onNavigate} />}
-          {macroTab === 'calendar' && <EconomicCalendar events={macroData.events} notify={notify} permission="denied" />}
-          {macroTab === 'yield'    && <YieldCurveCard yieldCurve={macroData.yieldCurve} />}
-          {macroTab === 'macro'    && <MacroIndicators econData={macroData.econData} />}
-        </div>
-      )}
+        )
+      })()}
 
       <div className="card" style={{ marginBottom:16 }}>
         <div style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', color:G1, marginBottom:6 }}>🌍 Global Causal Chain Engine</div>

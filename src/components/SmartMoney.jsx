@@ -160,12 +160,43 @@ export default function SmartMoney({ onNavigateToDive }) {
           ))}
         </div>
 
-        {tab === 'feed' && (
-          <>
-            <Section title="CONGRESSIONAL BUYS" icon="🏛️" items={congressFeed} type="congress" loading={loadingFeed} empty="No recent congressional purchases found" onNavigate={onNavigateToDive} />
-            <Section title="CEO / EXECUTIVE BUYS" icon="💼" items={insiderFeed} type="insider" loading={loadingFeed} empty="No recent executive purchases found" onNavigate={onNavigateToDive} />
-          </>
-        )}
+        {tab === 'feed' && (() => {
+          // Detect insider clusters — 2+ insiders buying same ticker within 30 days
+          const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000)
+          const recentBuys = insiderFeed.filter(t => t.isBuy && new Date(t.date) > thirtyDaysAgo)
+          const tickerCounts = {}
+          recentBuys.forEach(t => { tickerCounts[t.ticker] = (tickerCounts[t.ticker] || 0) + 1 })
+          const clusters = Object.entries(tickerCounts)
+            .filter(([, count]) => count >= 2)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+
+          return (
+            <>
+              {clusters.length > 0 && (
+                <div style={{ background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:12, padding:'14px 16px', marginBottom:20 }}>
+                  <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', fontWeight:700, letterSpacing:'1.5px', color:'#00ff88', marginBottom:10 }}>⚡ INSIDER CLUSTER SIGNALS</div>
+                  {clusters.map(([ticker, count]) => (
+                    <div key={ticker} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+                      <div>
+                        <span style={{ fontFamily:'var(--font-mono)', fontWeight:700, fontSize:'0.82rem', color:'#fff' }}>{ticker}</span>
+                        <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#00ff88', marginLeft:8 }}>{count} insider buys in 30 days</span>
+                        <div style={{ fontSize:'0.62rem', color:'#888', marginTop:2 }}>Historically bullish — multiple insiders buying with own money</div>
+                      </div>
+                      {onNavigateToDive && (
+                        <button onClick={() => onNavigateToDive(ticker)} style={{ background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:6, padding:'4px 10px', color:'#00E5FF', fontFamily:'var(--font-mono)', fontSize:'0.6rem', cursor:'pointer', flexShrink:0 }}>
+                          Dive →
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Section title="CONGRESSIONAL BUYS" icon="🏛️" items={congressFeed} type="congress" loading={loadingFeed} empty="No recent congressional purchases found" onNavigate={onNavigateToDive} />
+              <Section title="CEO / EXECUTIVE BUYS" icon="💼" items={insiderFeed.filter(t => t.isBuy)} type="insider" loading={loadingFeed} empty="No recent executive purchases found" onNavigate={onNavigateToDive} />
+            </>
+          )
+        })()}
 
         {tab === 'search' && (
           <>

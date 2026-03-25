@@ -285,6 +285,24 @@ export default function Watchlist({ onNavigateToDive }) {
                     {hasAlert && <span style={{ fontSize:'0.6rem', color:YELLOW }}>🔔</span>}
                   </div>
                   <div style={{ fontSize:'0.68rem', color:G1, marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{name}</div>
+                  {/* One-line signal reason */}
+                  {hasResult && (() => {
+                    const scores = item.result?.scores || {}
+                    const mom = item.result?.mom || {}
+                    let reason = ''
+                    if (item.result?.isQualityDip) reason = '💎 Quality dip — strong business at a discount'
+                    else if (r.verdict === 'BUY' && scores.trend > 0.3 && scores.momentum > 0.2) reason = '▲ Strong uptrend — above MA with positive momentum'
+                    else if (r.verdict === 'BUY' && scores.analyst > 0.4 && scores.earnings > 0.2) reason = '★ Strong fundamentals — analyst + earnings aligned'
+                    else if (r.verdict === 'BUY') reason = '● Entry signal — multiple factors align'
+                    else if (r.verdict === 'HOLD' && scores.trend < -0.2) reason = '⚠ Below 50d MA — wait for trend recovery'
+                    else if (r.verdict === 'HOLD' && (mom['1m'] || 0) < -5) reason = '◆ Pulling back — watch for stabilization'
+                    else if (r.verdict === 'HOLD') reason = '◆ Mixed signals — hold, no clear entry yet'
+                    else if (r.verdict === 'AVOID' && scores.momentum < -0.4) reason = '✕ Momentum breakdown — avoid new positions'
+                    else if (r.verdict === 'AVOID') reason = '✕ Multiple factors negative — stay out'
+                    return reason ? (
+                      <div style={{ fontSize:'0.62rem', color: r.verdict === 'BUY' ? GREEN : r.verdict === 'HOLD' ? YELLOW : RED, marginTop:3, fontWeight:500 }}>{reason}</div>
+                    ) : null
+                  })()}
                   {/* Earnings countdown */}
                   <EarningsCalendarRow ticker={item.ticker} ec={ec} />
                   {hasResult && (

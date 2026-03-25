@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { fetchQuote } from '../hooks/useApi.js'
-import { fmtMcap } from '../utils/scoring.js'
+import { fetchQuote, fetchTickerLite } from '../hooks/useApi.js'
+import { fmtMcap, scoreAsset } from '../utils/scoring.js'
 import { Toast, PullToRefresh } from './shared.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'
@@ -114,6 +114,7 @@ function AddHoldingForm({ onAdd, onCancel }) {
 export default function Portfolio({ onNavigateToDive }) {
   const [holdings, setHoldings] = useState(loadHoldings)
   const [prices,   setPrices]   = useState({})
+  const [scores,   setScores]   = useState({})  // PULSE scores per holding
   const [loading,  setLoading]  = useState(false)
   const [showAdd,  setShowAdd]  = useState(false)
   const [toast,    setToast]    = useState(null)
@@ -129,6 +130,15 @@ export default function Portfolio({ onNavigateToDive }) {
     results.forEach(([t, q]) => { if (q) map[t] = q })
     setPrices(map)
     setLoading(false)
+    // Fetch PULSE scores in background — non-blocking
+    const ea = v => Array.isArray(v) ? v : []
+    for (const t of tickers) {
+      fetchTickerLite(t).then(data => {
+        if (!data) return
+        const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, ea(data.news), data.rec, ea(data.earnings), undefined, { ticker: t })
+        setScores(prev => ({ ...prev, [t]: { pct: r.pct, verdict: r.verdict, color: r.color, isQualityDip: r.isQualityDip } }))
+      }).catch(() => {})
+    }
   }, [holdings])
 
   useEffect(() => { if (holdings.length) refreshPrices() }, []) // eslint-disable-line
@@ -297,10 +307,30 @@ export default function Portfolio({ onNavigateToDive }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.88rem', color: '#fff' }}>{h.ticker}</div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.88rem', color: '#fff' }}>{h.ticker}</div>
+                        {scores[h.ticker] && (() => {
+                          const sc = scores[h.ticker]
+                          const bg = `${sc.color}18`
+                          const border = `1px solid ${sc.color}40`
+                          return (
+                            <div style={{ display:'flex', alignItems:'center', gap:4, background:bg, border, borderRadius:6, padding:'2px 7px' }}>
+                              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', fontWeight:700, color:sc.color }}>{Math.round(sc.pct)}</span>
+                              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.55rem', color:sc.color }}>{sc.verdict}</span>
+                              {sc.isQualityDip && <span style={{ fontSize:'0.6rem' }}>💎</span>}
+                            </div>
+                          )
+                        })()}
+                      </div>
                       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: G1, marginTop: 1 }}>
                         {h.shares} shares · avg ${fmt(h.avgCost)}
                       </div>
+                      {/* Exit signal alert */}
+                      {scores[h.ticker]?.verdict === 'AVOID' && (
+                        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:'#FF5000', marginTop:3, background:'rgba(255,80,0,0.08)', border:'1px solid rgba(255,80,0,0.25)', borderRadius:5, padding:'2px 7px', display:'inline-block' }}>
+                          ⚠ Exit signal — review position
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>

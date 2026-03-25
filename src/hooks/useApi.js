@@ -1276,19 +1276,17 @@ export function useTickerData() {
       }
       const [candles, metrics, news, rec, earnings, profile, insider, ec,
              priceTarget, upgrades, peers, score, rating, dcf, sharesFloat,
-             priceChange, executives, ownerEarnings, esg, transcript,
-             keyMetrics, incomeGrowth, cfGrowth, bsGrowth, revenueSegments, dividends, regimeData] = await Promise.all([
+             priceChange, keyMetrics, incomeGrowth, cfGrowth, bsGrowth,
+             revenueSegments, dividends] = await Promise.all([
         fetchCandles(ticker), fetchMetrics(ticker), fetchNews(ticker),
         fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
         fetchFMPInsider(ticker), fetchEarningsCalendar(ticker),
         fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker),
         fetchPeers(ticker), fetchScore(ticker), fetchRating(ticker),
         fetchDCF(ticker), fetchSharesFloat(ticker), fetchPriceChange(ticker),
-        fetchExecutives(ticker), fetchOwnerEarnings(ticker),
-        fetchESG(ticker), fetchEarningsTranscript(ticker),
         fetchKeyMetrics(ticker), fetchIncomeGrowth(ticker),
         fetchCashFlowGrowth(ticker), fetchBalanceSheetGrowth(ticker),
-        fetchRevenueSegments(ticker), fetchDividends(ticker), fetchRegimeData(ticker)
+        fetchRevenueSegments(ticker), fetchDividends(ticker)
       ])
       // Compute MACD locally from candles — no extra API call
       const macd = Array.isArray(candles?.closes) && candles.closes.length >= 30 ? calcMACD(candles.closes) : null
@@ -1302,13 +1300,10 @@ export function useTickerData() {
         macd: macd || null, peers: ensureArr(peers),
         score: score || null, rating: rating || null,
         dcf: dcf || null, sharesFloat: sharesFloat || null,
-        priceChange: priceChange || null, executives: executives || null,
-        ownerEarnings: ownerEarnings || null, esg: esg || null,
-        transcript: transcript || null,
+        priceChange: priceChange || null,
         keyMetrics: keyMetrics || null, incomeGrowth: incomeGrowth || null,
         cfGrowth: cfGrowth || null, bsGrowth: bsGrowth || null,
-        revenueSegments: revenueSegments || null, dividends: dividends || null,
-        regimeData: regimeData || null
+        revenueSegments: revenueSegments || null, dividends: dividends || null
       })
     } catch { setError('Network error — check your connection and try again.') }
     finally  { setLoading(false) }

@@ -221,63 +221,131 @@ function AnalystHistory({ rec, price, avTarget }) {
 
 /* ── Analysis Brief ───────────────────────────────────────────── */
 function AnalysisBrief({ ticker, company, sector, price, result, ma50, metrics, news, rec, earn, insider }) {
-  const S=result.scores; const mom=result.mom; const pe=result.pe
-  const nb=(insider||[]).filter(x => x.isBuy === true).length
-  const ns=(insider||[]).filter(x => x.isBuy === false).length
-  const insSig = nb>ns?'bullish — executives buying with own money':ns>nb?'bearish — insiders net sellers':'neutral'
-  let earnTxt=''; let recTxt=''
+  const S = result.scores; const mom = result.mom
+  const nb = (insider||[]).filter(x => x.isBuy === true).length
+  const ns = (insider||[]).filter(x => x.isBuy === false).length
+  const revenueGrowth = metrics?.revenueGrowthYoY || null
+  const fcf = metrics?.fcfPerShare || null
+
+  // Business quality sentence
+  let businessSentence = ''
+  if (revenueGrowth != null && revenueGrowth > 30)
+    businessSentence = `${company} is a high-growth business with revenue expanding ${revenueGrowth.toFixed(0)}% year-over-year`
+  else if (revenueGrowth != null && revenueGrowth > 10)
+    businessSentence = `${company} is a steady grower with revenue up ${revenueGrowth.toFixed(0)}% year-over-year`
+  else if (revenueGrowth != null && revenueGrowth > 0)
+    businessSentence = `${company} is growing modestly with revenue up ${revenueGrowth.toFixed(0)}% year-over-year`
+  else if (revenueGrowth != null && revenueGrowth <= 0)
+    businessSentence = `${company} is facing revenue headwinds, down ${Math.abs(revenueGrowth).toFixed(0)}% year-over-year`
+  else
+    businessSentence = `${company} operates in the ${sector || 'market'}`
+
+  // Earnings sentence
+  let earnSentence = ''
   if (earn?.length) {
-    const surp=earn.filter(q=>q.estimate).map(q=>((q.actual||0)-(q.estimate||0))/Math.abs(q.estimate||1)*100)
-    if (surp.length) { const avg=surp.reduce((a,b)=>a+b,0)/surp.length; earnTxt=`Beat estimates ${surp.filter(x=>x>0).length}/${surp.length} quarters · avg surprise ${avg>0?'+':''}${avg.toFixed(1)}%` }
+    const withEst = earn.filter(q => q.estimate != null && q.actual != null)
+    if (withEst.length >= 2) {
+      const beats = withEst.filter(q => q.actual > q.estimate).length
+      const beatRate = Math.round(beats / withEst.length * 100)
+      if (beatRate >= 75) earnSentence = `, consistently beating analyst estimates ${beats}/${withEst.length} quarters`
+      else if (beatRate >= 50) earnSentence = `, beating estimates ${beats}/${withEst.length} quarters`
+      else earnSentence = `, missing estimates more often than not (${beats}/${withEst.length} beats)`
+    }
   }
-  if (rec && Object.keys(rec).length) {
-    const sb=rec.strongBuy||0,b=rec.buy||0,h=rec.hold||0,s=rec.sell||0,ss=rec.strongSell||0,tot=sb+b+h+s+ss
-    if (tot>0) recTxt=`${Math.round((sb+b*.5)/tot*100)}% analysts bullish (${sb} Strong Buy · ${b} Buy · ${h} Hold)`
+
+  // FCF sentence
+  let fcfSentence = ''
+  if (fcf != null && fcf > 5) fcfSentence = ' with strong free cash flow'
+  else if (fcf != null && fcf > 0) fcfSentence = ' with positive free cash flow'
+  else if (fcf != null && fcf < 0) fcfSentence = ' but currently cash flow negative'
+
+  // Price action sentence
+  const trendAbove = S.trend > 0
+  const mom3m = mom?.['3m'] || 0
+  let priceSentence = ''
+  if (trendAbove && mom3m > 0)
+    priceSentence = `The stock is above its 50-day moving average with positive momentum`
+  else if (trendAbove && mom3m < 0)
+    priceSentence = `The stock is above its 50-day MA but has pulled back ${Math.abs(mom3m).toFixed(1)}% over 3 months`
+  else if (!trendAbove && mom3m < 0)
+    priceSentence = `The stock is below its 50-day MA and has declined ${Math.abs(mom3m).toFixed(1)}% over 3 months`
+  else
+    priceSentence = `The stock is below its 50-day MA but showing early signs of stabilization`
+
+  // Quality dip
+  let dipSentence = ''
+  if (result.isQualityDip) {
+    const pctOff = result.qualityDipLabel?.match(/down (\d+)%/)?.[1]
+    dipSentence = ` Down ${pctOff || 'significantly'}% from its 52-week high — potential entry opportunity for patient investors.`
   }
-  const rsi=mom?.rsi; const trendAbove=S.trend>0
-  const maNote=ma50&&price?`${trendAbove?'above':'below'} 50-day MA ($${ma50}) by ${Math.abs((price-ma50)/ma50*100).toFixed(1)}%`:'50-day MA unavailable'
-  const rsiNote=rsi>70?`RSI ${rsi} — overbought, pullback risk`:rsi<30?`RSI ${rsi} — oversold, bounce potential`:`RSI ${rsi} — neutral`
-  const sections = [
-    ['WHAT THIS COMPANY DOES', `${company} operates in the ${sector||'N/A'} sector. Ticker: ${ticker}.`],
-    ['WHAT IS DRIVING THE PRICE', `Price is ${maNote}. ${rsiNote}. 1-month: ${mom?.['1m']??'N/A'}% · 3-month: ${mom?.['3m']??'N/A'}% · 6-month: ${mom?.['6m']??'N/A'}% · 1-year: ${mom?.['1y']??'N/A'}%.`],
-    ['STRENGTHS', [
-      `Momentum: ${mom?.['1m']??'N/A'}% (1M) · ${mom?.['3m']??'N/A'}% (3M) · ${mom?.['6m']??'N/A'}% (6M) · ${mom?.['1y']??'N/A'}% (1Y)`,
-      recTxt||null, earnTxt||null,
-      `News sentiment: ${result.avgSent>0?'+':''}${result.avgSent} (${result.avgSent>.08?'positive':result.avgSent<-.08?'negative':'neutral'}) from ${news?.length||0} articles`,
-    ].filter(Boolean)],
-    ['RISKS', [
-      pe&&pe>30?`P/E ${pe.toFixed(1)}× — elevated, vulnerable to earnings misses`:pe?`P/E ${pe.toFixed(1)}× — reasonable`:null,
-      !trendAbove?`Price below 50-day MA — trend not confirmed`:null,
-      rsi>65?`RSI ${rsi} — momentum extended, pullback possible`:null,
-      (result.uncertainty||[]).length?result.uncertainty.join('; '):null,
-    ].filter(Boolean)],
-    ['ANALYSTS & INSIDERS', `${recTxt||'No analyst rating data available'}. Insider activity (90d): ${insSig}.`],
-    [`VERDICT — ${result.verdict} · ${result.pct.toFixed(0)}/100 · CONVICTION ${result.conviction.toFixed(0)}%`,
-      `${result.factorsAgree}/${Object.keys(result.scores).length} signal factors agree. ` +
-      (result.verdict==='BUY'?`Entry opportunity — ${result.conviction>70?'high':'moderate'} confidence. Respect position sizing.`:
-       result.verdict==='HOLD'?`Hold existing positions. Not ideal entry point. Wait for clearer signal.`:
-       `Avoid or reduce exposure. Signal does not support buying here.`)],
-    ['THREE THINGS TO WATCH', [
-      `Next earnings — does ${ticker} maintain its beat rate?`,
-      `Price action vs 50-day MA${ma50?` at $${ma50}`:''}`,
-      `News sentiment direction — currently ${result.avgSent>.08?'positive':result.avgSent<-.08?'negative':'neutral'}`,
-    ]],
-  ]
+
+  // Analyst sentence
+  let analystSentence = ''
+  const recData = rec?.current || rec || {}
+  const sb = recData.strongBuy || 0; const b = recData.buy || 0
+  const h = recData.hold || 0; const s = recData.sell || 0; const ss2 = recData.strongSell || 0
+  const tot = sb + b + h + s + ss2
+  if (tot > 0) {
+    const bullPct = Math.round((sb + b * 0.5) / tot * 100)
+    if (bullPct >= 75) analystSentence = ` Wall Street is broadly bullish — ${bullPct}% of analysts rate it a buy.`
+    else if (bullPct >= 50) analystSentence = ` Analyst sentiment is moderately positive at ${bullPct}% bullish.`
+    else analystSentence = ` Analyst sentiment is mixed at ${bullPct}% bullish.`
+  }
+
+  // Insider sentence
+  let insiderSentence = ''
+  if (nb > ns && nb >= 2) insiderSentence = ` ${nb} insiders have been buying with their own money — a positive signal.`
+  else if (ns > nb && ns >= 3) insiderSentence = ` Insiders are net sellers (${ns} sells vs ${nb} buys) — worth monitoring.`
+
+  // Action sentence
+  let actionSentence = ''
+  if (result.verdict === 'BUY')
+    actionSentence = ` Current conditions support entry. Set a stop-loss below the 50-day MA.`
+  else if (result.verdict === 'HOLD' && result.isQualityDip)
+    actionSentence = ` Watch for price to reclaim the 50-day MA${ma50 ? ` at $${ma50}` : ''} before adding exposure.`
+  else if (result.verdict === 'HOLD')
+    actionSentence = ` Hold existing positions. Wait for a clearer entry signal.`
+  else
+    actionSentence = ` Conditions do not support a new position. Wait for improvement.`
+
+  const synthesis = `${businessSentence}${earnSentence}${fcfSentence}. ${priceSentence}.${dipSentence}${analystSentence}${insiderSentence}${actionSentence}`
+
+  // Three things to watch
+  const watchList = []
+  if (ma50 && !trendAbove) watchList.push(`Price crossing back above the 50-day MA at $${ma50}`)
+  else if (ma50 && trendAbove) watchList.push(`50-day MA at $${ma50} holding as support on pullbacks`)
+  if (earn?.length) watchList.push(`Next earnings — can ${ticker} maintain its beat rate?`)
+  if (result.isQualityDip) watchList.push(`Market recovery — quality dip stocks tend to lead when sentiment turns`)
+  else if (mom3m < -5) watchList.push(`Momentum reversal — watch for 3-month return to turn positive`)
+  watchList.push(`News sentiment — currently ${result.avgSent > .08 ? 'positive' : result.avgSent < -.08 ? 'negative' : 'neutral'}`)
+
+  const verdictColor = result.color
+
   return (
     <div className="card" style={{padding:'20px 18px'}}>
-      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',color:'#B2B2B2',marginBottom:16}}>📊 Analysis Brief</div>
-      {sections.map(([head,body])=>(
-        <div key={head}>
-          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',color:'#B2B2B2',margin:'16px 0 6px',paddingBottom:5,borderBottom:'1px solid #1A1A1A'}}>{head}</div>
-          {Array.isArray(body)
-            ? body.map((item,i)=><div key={i} style={{fontSize:'0.83rem',color:'#B2B2B2',padding:'2px 0 2px 10px',lineHeight:1.8,borderLeft:'2px solid #252525',margin:'2px 0'}}>· {item}</div>)
-            : <div style={{fontSize:'0.84rem',lineHeight:1.85,color:head.includes('VERDICT')?'#fff':'#B2B2B2',background:head.includes('VERDICT')?`${result.color}10`:'transparent',borderLeft:head.includes('VERDICT')?`3px solid ${result.color}`:'none',padding:head.includes('VERDICT')?'10px 12px':'0',borderRadius:head.includes('VERDICT')?'0 8px 8px 0':0}}>{body}</div>}
+      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',color:'#B2B2B2',marginBottom:14}}>📊 Analysis</div>
+      <div style={{fontSize:'0.88rem',lineHeight:1.9,color:'#fff',marginBottom:18,padding:'14px 16px',background:`${verdictColor}08`,border:`1px solid ${verdictColor}25`,borderRadius:12}}>
+        {synthesis}
+      </div>
+      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',color:'#B2B2B2',marginBottom:10,paddingBottom:5,borderBottom:'1px solid #1A1A1A'}}>
+        👁 Three Things To Watch
+      </div>
+      {watchList.slice(0,3).map((item,i) => (
+        <div key={i} style={{fontSize:'0.82rem',color:'#B2B2B2',padding:'6px 0 6px 10px',lineHeight:1.7,borderLeft:'2px solid #252525',margin:'3px 0'}}>
+          · {item}
         </div>
       ))}
+      {result.upside != null && (
+        <div style={{marginTop:14,padding:'10px 14px',background: result.upside > 0 ? '#00C80510' : '#FF500010',border:`1px solid ${result.upside > 0 ? '#00C80530' : '#FF500030'}`,borderRadius:10,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#B2B2B2',letterSpacing:0.5}}>ANALYST FAIR VALUE</div>
+          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.82rem',fontWeight:700,color: result.upside > 0 ? '#00C805' : '#FF5000'}}>
+            {result.upside > 0 ? `▲ ${result.upside}% upside` : `▼ ${Math.abs(result.upside)}% downside`}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
 /* ── Position Sizing ──────────────────────────────────────────── */
 function PositionSizing({ verdict, price, capital=10000, allocPct=45 }) {
   const [cap, setCap] = useState(capital)
@@ -905,53 +973,6 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               <div style={{fontSize:'0.72rem',color:'#B2B2B2'}}>
                 Current price ${data.dcf.price} · DCF ${data.dcf.dcf} · {data.dcf.upside>10?'Significant margin of safety':'Priced near intrinsic value'}
               </div>
-            </div></>
-          )}
-
-          {/* Owner Earnings */}
-          {data.ownerEarnings && (
-            <><SectionHeader>Owner Earnings (Buffett Method)</SectionHeader>
-            <div className="card" style={{padding:'14px 16px'}}>
-              <div className="metrics-grid" style={{marginBottom:0}}>
-                {data.ownerEarnings.ownerEarningsPerShare!=null&&<MetricCell label="Owner EPS" value={`$${data.ownerEarnings.ownerEarningsPerShare.toFixed(2)}`} deltaColor={data.ownerEarnings.ownerEarningsPerShare>0?'pos':'neg'}/>}
-                {data.ownerEarnings.ownerEarnings!=null&&<MetricCell label="Owner Earnings" value={`$${(data.ownerEarnings.ownerEarnings/1e9).toFixed(1)}B`} deltaColor={data.ownerEarnings.ownerEarnings>0?'pos':'neg'}/>}
-                {data.ownerEarnings.maintenanceCapex!=null&&<MetricCell label="Maint. Capex" value={`$${(Math.abs(data.ownerEarnings.maintenanceCapex)/1e9).toFixed(1)}B`}/>}
-              </div>
-            </div></>
-          )}
-
-          {/* ESG Scores */}
-          {data.esg && (
-            <><SectionHeader>ESG Scores · {data.esg.year||''}</SectionHeader>
-            <div className="card" style={{padding:'14px 16px'}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                <div style={{fontFamily:'var(--font-display)',fontSize:'1.8rem',fontWeight:900,color:CYAN}}>{data.esg.esgScore?.toFixed(0)??'—'}</div>
-                <div>
-                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:'#fff'}}>{data.esg.rating||'ESG Score'}</div>
-                  <div style={{fontSize:'0.62rem',color:'#888'}}>Overall ESG Rating</div>
-                </div>
-              </div>
-              <div className="metrics-grid" style={{marginBottom:0}}>
-                {data.esg.environmentScore!=null&&<MetricCell label="Environment" value={data.esg.environmentScore.toFixed(0)} deltaColor={data.esg.environmentScore>60?'pos':data.esg.environmentScore<30?'neg':'neu'}/>}
-                {data.esg.socialScore!=null&&<MetricCell label="Social" value={data.esg.socialScore.toFixed(0)} deltaColor={data.esg.socialScore>60?'pos':data.esg.socialScore<30?'neg':'neu'}/>}
-                {data.esg.governanceScore!=null&&<MetricCell label="Governance" value={data.esg.governanceScore.toFixed(0)} deltaColor={data.esg.governanceScore>60?'pos':data.esg.governanceScore<30?'neg':'neu'}/>}
-              </div>
-            </div></>
-          )}
-
-          {/* Key Executives */}
-          {data.executives?.length > 0 && (
-            <><SectionHeader>Key Executives</SectionHeader>
-            <div className="card" style={{padding:'0 16px'}}>
-              {data.executives.map((e,i)=>(
-                <div key={i} style={{padding:'10px 0',borderBottom:i<data.executives.length-1?'1px solid #1a1a1a':'none',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div>
-                    <div style={{fontSize:'0.82rem',color:'#fff'}}>{e.name}</div>
-                    <div style={{fontSize:'0.68rem',color:'#888',marginTop:2}}>{e.title}</div>
-                  </div>
-                  {e.pay&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:CYAN}}>${(e.pay/1e6).toFixed(1)}M</div>}
-                </div>
-              ))}
             </div></>
           )}
 
