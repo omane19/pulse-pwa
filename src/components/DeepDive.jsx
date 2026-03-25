@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
@@ -585,13 +585,16 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
 
   const handleTrack = useCallback(async () => {
     if (!result || !data?.quote?.c) return
+    // Fetch SPY price at signal time for benchmark comparison
+    const spyQuote = await fetchQuote('SPY').catch(() => null)
     await trackSignal({
-      ticker:  data.ticker,
-      verdict: result.verdict,
-      score:   result.pct,
-      price:   data.quote.c,
-      factors: result.scores,
-      reasons: result.reasons,
+      ticker:   data.ticker,
+      verdict:  result.verdict,
+      score:    result.pct,
+      price:    data.quote.c,
+      spyPrice: spyQuote?.c || null,
+      factors:  result.scores,
+      reasons:  result.reasons,
     })
     setTracked(true)
     setToast(`📊 ${data.ticker} tracked — check Track Record tab`)
@@ -665,6 +668,11 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               <div style={{marginTop:6, fontFamily:'var(--font-mono)', fontSize:'0.72rem', color: result.upside > 0 ? '#00C805' : '#FF5000'}}>
                 Analyst target: {result.upside > 0 ? '▲' : '▼'} {Math.abs(result.upside)}% {result.upside > 0 ? 'upside' : 'downside'}
                 {data?.priceTarget?.analysts ? ` · ${data.priceTarget.analysts} analysts` : ''}
+              </div>
+            )}
+            {data?.dcf?.upside != null && (
+              <div style={{marginTop:4, fontFamily:'var(--font-mono)', fontSize:'0.72rem', color: data.dcf.upside > 15 ? '#00C805' : data.dcf.upside > 0 ? '#FFD700' : '#FF5000'}}>
+                DCF fair value: ${data.dcf.dcf} · {data.dcf.upside > 0 ? `▲ ${data.dcf.upside.toFixed(1)}% undervalued` : `▼ ${Math.abs(data.dcf.upside).toFixed(1)}% overvalued`}
               </div>
             )}
           </div>

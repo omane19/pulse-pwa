@@ -230,10 +230,45 @@ function TickerOptionsGuide({ ticker, result, price, ec, metrics, candles }) {
   const pe = result.pe
   const rsi = result.mom?.rsi
   const mom1m = result.mom?.['1m']
+  const mom3m = result.mom?.['3m']
 
-  // Timing signals
-  const earningsSoon = ec ? (() => { try { const d = new Date(ec.date); return Math.round((d-new Date())/86400000) <= 7 } catch { return false } })() : false
-  const highIV = pe && pe > 40
+  // ── IV Rank estimation from price history ──────────────────────────────
+  // True IV Rank needs options history — we approximate using 52w high/low
+  // and current volatility from price swings (HV20 — 20-day historical vol)
+  const closes = candles?.closes || []
+  let hv20 = null
+  if (closes.length >= 21) {
+    const returns = closes.slice(-21).map((c, i, arr) => i === 0 ? 0 : Math.log(c / arr[i-1])).slice(1)
+    const mean = returns.reduce((a,b) => a+b, 0) / returns.length
+    const variance = returns.reduce((a,b) => a + Math.pow(b - mean, 2), 0) / returns.length
+    hv20 = parseFloat((Math.sqrt(variance * 252) * 100).toFixed(1))  // annualized %
+  }
+
+  // Expected move = price × IV × sqrt(DTE/365) — use HV20 as IV proxy if no options data
+  const dte45 = 45
+  const ivProxy = hv20 || 30  // fallback 30% if can't calculate
+  const expectedMove45 = price ? parseFloat((price * (ivProxy/100) * Math.sqrt(dte45/365)).toFixed(2)) : null
+  const expectedMovePct = price && expectedMove45 ? parseFloat((expectedMove45/price*100).toFixed(1)) : null
+
+  // IV environment — compare HV20 to typical range
+  // If stock has been quiet (low HV) options are cheap → good to buy
+  // If stock has been volatile (high HV) options are expensive → sell or use spreads
+  let ivEnvironment = null
+  let ivColor = YELLOW
+  let ivAction = ''
+  if (hv20 != null) {
+    if (hv20 < 20) { ivEnvironment = `Low Vol (HV20: ${hv20}%)`; ivColor = GREEN; ivAction = 'Options are relatively cheap — better environment to buy calls/puts' }
+    else if (hv20 < 35) { ivEnvironment = `Moderate Vol (HV20: ${hv20}%)`; ivColor = YELLOW; ivAction = 'Normal volatility — spreads preferred over naked options to manage cost' }
+    else if (hv20 < 55) { ivEnvironment = `High Vol (HV20: ${hv20}%)`; ivColor = RED; ivAction = 'Elevated volatility — premiums are expensive. Favor selling strategies (covered calls, cash-secured puts)' }
+    else { ivEnvironment = `Very High Vol (HV20: ${hv20}%)`; ivColor = RED; ivAction = 'Extreme volatility — options are very expensive. Avoid buying premium. Consider iron condors or wait for vol to normalize.' }
+  }
+
+  // Earnings timing
+  const daysToEarnings = ec ? (() => { try { return Math.round((new Date(ec.date) - new Date()) / 86400000) } catch { return null } })() : null
+  const earningsSoon = daysToEarnings != null && daysToEarnings <= 7
+  const earningsWithin45 = daysToEarnings != null && daysToEarnings <= 45 && daysToEarnings > 0
+  const earningsCrushRisk = earningsWithin45  // any options expiring through earnings face IV crush
+
   const overbought = rsi && rsi > 70
   const oversold = rsi && rsi < 30
 
@@ -257,13 +292,59 @@ function TickerOptionsGuide({ ticker, result, price, ec, metrics, candles }) {
       {/* Specific strikes */}
       <StrikeBox strikes={calcStrikes(price, verdict, rsi)} verdict={verdict} price={price} />
 
+      {/* IV Environment + Expected Move — the two most important options signals */}
+      {(ivEnvironment || expectedMove45) && (
+        <div style={{ marginBottom:16 }}>
+          <SectionHeader>Volatility Intelligence</SectionHeader>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+            {ivEnvironment && (
+              <div style={{ background:`${ivColor}10`, border:`1px solid ${ivColor}30`, borderRadius:12, padding:'12px 14px' }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:G1, letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Volatility Environment</div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.78rem', fontWeight:700, color:ivColor, marginBottom:4 }}>{ivEnvironment}</div>
+                <div style={{ fontSize:'0.7rem', color:G1, lineHeight:1.6 }}>{ivAction}</div>
+              </div>
+            )}
+            {expectedMove45 && price && (
+              <div style={{ background:'rgba(0,229,255,0.06)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:12, padding:'12px 14px' }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:G1, letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Expected Move (45 DTE)</div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.78rem', fontWeight:700, color:CYAN, marginBottom:4 }}>±${expectedMove45} ({expectedMovePct}%)</div>
+                <div style={{ fontSize:'0.7rem', color:G1, lineHeight:1.6 }}>
+                  Range: ${(price - expectedMove45).toFixed(2)} – ${(price + expectedMove45).toFixed(2)}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Earnings IV Crush Warning */}
+      {earningsCrushRisk && (
+        <div style={{ background:'rgba(255,80,0,0.08)', border:'1px solid rgba(255,80,0,0.35)', borderRadius:12, padding:'14px 16px', marginBottom:16 }}>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:RED, letterSpacing:1.5, textTransform:'uppercase', marginBottom:8, fontWeight:700 }}>
+            ⚠ EARNINGS IV CRUSH RISK
+          </div>
+          {earningsSoon ? (
+            <div style={{ fontSize:'0.8rem', color:'#fff', lineHeight:1.7 }}>
+              Earnings in <strong>{daysToEarnings} days</strong>. IV is near peak right now — options are at their most expensive. If you buy options today and hold through earnings, IV will collapse immediately after the announcement regardless of which direction the stock moves. You can be completely right about direction and still lose money.
+            </div>
+          ) : (
+            <div style={{ fontSize:'0.8rem', color:'#fff', lineHeight:1.7 }}>
+              Earnings in <strong>{daysToEarnings} days</strong>. Any options expiring after {ec?.date} will experience IV crush post-earnings. Use shorter-dated options expiring before earnings, or price in the IV collapse when calculating your break-even.
+            </div>
+          )}
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.65rem', color:RED, marginTop:8 }}>
+            Rule: Never buy calls/puts expiring through earnings unless you're deliberately trading the event.
+          </div>
+        </div>
+      )}
+
       {/* Live context */}
       <SectionHeader>Live Signals for {ticker}</SectionHeader>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginBottom:16 }}>
         {[
           ['Price', price ? `$${price.toFixed(2)}` : '—', null],
           ['RSI-14', rsi ?? '—', rsi>70?'Overbought':rsi<30?'Oversold':'Neutral'],
-          ['1-Month', mom1m!=null ? `${mom1m>0?'+':''}${mom1m}%` : '—', null],
+          ['HV20', hv20 ? `${hv20}%` : '—', hv20 > 40 ? 'High Vol' : hv20 < 20 ? 'Low Vol' : 'Normal'],
           ['P/E', pe ? `${pe.toFixed(1)}×` : '—', pe>40?'Expensive':pe<15?'Value':null],
           ['Signal', `${result.pct.toFixed(0)}/100`, null],
           ['Conviction', `${result.conviction.toFixed(0)}%`, null],
@@ -277,12 +358,10 @@ function TickerOptionsGuide({ ticker, result, price, ec, metrics, candles }) {
       </div>
 
       {/* Timing alerts */}
-      {(earningsSoon || highIV || overbought || oversold) && (
+      {(overbought || oversold) && (
         <div style={{ marginBottom:16 }}>
-          {earningsSoon && <div style={{ background:'rgba(255,80,0,0.08)', border:'1px solid rgba(255,80,0,0.3)', borderRadius:10, padding:'10px 14px', marginBottom:8, fontSize:'0.8rem', color:RED }}>⚠ Earnings in under 7 days — options IV is inflated. Avoid buying options here unless you're trading the event intentionally. IV will collapse after earnings regardless of direction.</div>}
-          {highIV && !earningsSoon && <div style={{ background:'rgba(255,215,0,0.08)', border:'1px solid rgba(255,215,0,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:8, fontSize:'0.8rem', color:YELLOW }}>⚠ P/E {pe?.toFixed(1)}× — elevated valuation means elevated volatility. Options premiums likely inflated. Consider spreads over naked longs.</div>}
-          {overbought && <div style={{ background:'rgba(255,215,0,0.08)', border:'1px solid rgba(255,215,0,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:8, fontSize:'0.8rem', color:YELLOW }}>📊 RSI {rsi} — overbought zone. Calls are expensive here. Wait for pullback or use spreads to reduce cost. Put premium is also elevated if you want to hedge.</div>}
-          {oversold && <div style={{ background:'rgba(0,200,5,0.06)', border:'1px solid rgba(0,200,5,0.2)', borderRadius:10, padding:'10px 14px', marginBottom:8, fontSize:'0.8rem', color:GREEN }}>📊 RSI {rsi} — oversold zone. Call premiums are relatively cheap here — better time to buy directional exposure than chasing after a rally.</div>}
+          {overbought && <div style={{ background:'rgba(255,215,0,0.08)', border:'1px solid rgba(255,215,0,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:8, fontSize:'0.8rem', color:YELLOW }}>📊 RSI {rsi} — overbought. Calls are expensive here. Wait for pullback or use spreads to reduce cost.</div>}
+          {oversold && <div style={{ background:'rgba(0,200,5,0.06)', border:'1px solid rgba(0,200,5,0.2)', borderRadius:10, padding:'10px 14px', marginBottom:8, fontSize:'0.8rem', color:GREEN }}>📊 RSI {rsi} — oversold. Call premiums relatively cheap — better time to buy directional exposure than chasing a rally.</div>}
         </div>
       )}
 

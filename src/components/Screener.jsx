@@ -294,6 +294,7 @@ export default function Screener({ onNavigateToDive }) {
   const { list: watchlist } = useWatchlist()
   const [verdictFilter, setVerdictFilter] = useState(['BUY', 'HOLD', 'AVOID'])
   const [peMax, setPeMax] = useState(100)
+  const [qualityDipOnly, setQualityDipOnly] = useState(false)
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -499,9 +500,10 @@ export default function Screener({ onNavigateToDive }) {
     return results.filter(r => {
       if (!verdictFilter.includes(r.result.verdict)) return false
       if (peMax < 100 && r.result.pe && r.result.pe > peMax) return false
+      if (qualityDipOnly && !r.result.isQualityDip) return false
       return true
     })
-  }, [results, mode, verdictFilter, peMax])
+  }, [results, mode, verdictFilter, peMax, qualityDipOnly])
 
   // Summary stats for topN mode
   const topNFlat = topNGrouped ? topNGrouped.flatMap(([, items]) => items) : []
@@ -565,6 +567,19 @@ export default function Screener({ onNavigateToDive }) {
             <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color:G1, minWidth:36, textAlign:'right' }}>
               {peMax >= 100 ? 'Any' : `≤${peMax}×`}
             </span>
+          </div>
+          <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:10 }}>
+            <button
+              onClick={() => setQualityDipOnly(v => !v)}
+              style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 14px', borderRadius:20,
+                border:`1px solid ${qualityDipOnly ? '#00C805' : G4}`,
+                background: qualityDipOnly ? 'rgba(0,200,5,0.12)' : 'transparent',
+                color: qualityDipOnly ? '#00C805' : G1,
+                fontFamily:'var(--font-mono)', fontSize:'0.62rem', cursor:'pointer', letterSpacing:0.5
+              }}>
+              💎 Quality Dip only
+            </button>
+            <span style={{ fontSize:'0.65rem', color:G1 }}>Strong business, price down from highs</span>
           </div>
         </div>
       )}

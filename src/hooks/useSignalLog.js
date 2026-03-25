@@ -80,7 +80,7 @@ function saveLocal(arr) {
  * @param {object} p.factors  { momentum, trend, valuation, sentiment, analyst, earnings, smartmoney? }
  * @param {object} p.reasons  factor reason strings
  */
-export async function trackSignal({ ticker, verdict, score, price, factors, reasons }) {
+export async function trackSignal({ ticker, verdict, score, price, factors, reasons, spyPrice }) {
   if (!ticker || score == null || !price) return null
 
   const entry = {
@@ -88,6 +88,7 @@ export async function trackSignal({ ticker, verdict, score, price, factors, reas
     verdict,
     score,
     price_at_signal: price,
+    spy_price_at_signal: spyPrice || null,  // for benchmark comparison
     factors: factors || {},
     reasons: reasons || {},
     tracked_at: new Date().toISOString(),
@@ -140,16 +141,18 @@ export async function loadSignals() {
 /**
  * Update a signal's outcome prices (called auto after 30/60/90 days).
  */
-export async function updateOutcome(id, { price30, price60, price90, priceAtSignal }) {
+export async function updateOutcome(id, { price30, price60, price90, priceAtSignal, spyPrice30, spyPriceAtSignal }) {
   const calc = (p) => p != null ? parseFloat(((p - priceAtSignal) / priceAtSignal * 100).toFixed(2)) : null
+  const calcSpy = (p) => (p != null && spyPriceAtSignal) ? parseFloat(((p - spyPriceAtSignal) / spyPriceAtSignal * 100).toFixed(2)) : null
   const updates = {
-    price_30d:  price30  ?? undefined,
-    price_60d:  price60  ?? undefined,
-    price_90d:  price90  ?? undefined,
-    return_30d: calc(price30),
-    return_60d: calc(price60),
-    return_90d: calc(price90),
-    updated_at: new Date().toISOString(),
+    price_30d:       price30  ?? undefined,
+    price_60d:       price60  ?? undefined,
+    price_90d:       price90  ?? undefined,
+    return_30d:      calc(price30),
+    return_60d:      calc(price60),
+    return_90d:      calc(price90),
+    spy_return_30d:  calcSpy(spyPrice30),
+    updated_at:      new Date().toISOString(),
   }
   // Remove undefined keys
   Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k])
@@ -209,6 +212,21 @@ export function computeStats(signals) {
   const hypotheticalPnL = hypothetical != null ? parseFloat((hypothetical - hypotheticalInvested).toFixed(0)) : null
   const hypotheticalPct = hypothetical != null ? parseFloat(((hypothetical / hypotheticalInvested - 1) * 100).toFixed(1)) : null
 
+  // SPY benchmark — compare PULSE avg return vs SPY 30-day return over same periods
+  // signals store spy_return_30d if tracked (added going forward)
+  // For signals that have spy_return_30d, compute alpha = PULSE return - SPY return
+  const withSpy = buyCalls.filter(s => s.spy_return_30d != null)
+  const spyAvgReturn = withSpy.length
+    ? parseFloat((withSpy.reduce((a, b) => a + (b.spy_return_30d || 0), 0) / withSpy.length).toFixed(1))
+    : null
+  const alpha = (spyAvgReturn != null && avgReturn != null)
+    ? parseFloat((parseFloat(avgReturn) - spyAvgReturn).toFixed(1))
+    : null
+  // Beat rate — % of BUY signals that beat SPY in same 30d window
+  const beatSpyCount = withSpy.filter(s => (s.return_30d || 0) > (s.spy_return_30d || 0)).length
+  const beatSpyRate = withSpy.length ? Math.round(beatSpyCount / withSpy.length * 100) : null
+
   return { total: signals.length, buyCalls: buyCalls.length, buyWins: buyWins.length, winRate, avgReturn, best, worst,
-    hypotheticalInvested, hypotheticalPnL, hypotheticalPct, hypotheticalCalls: buyCalls.length }
+    hypotheticalInvested, hypotheticalPnL, hypotheticalPct, hypotheticalCalls: buyCalls.length,
+    spyAvgReturn, alpha, beatSpyRate, withSpyCount: withSpy.length }
 }

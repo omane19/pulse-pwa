@@ -213,6 +213,42 @@ export default function TrackRecord() {
         <StatCard label="AVG RETURN"   value={stats.avgReturn != null ? fmt(parseFloat(stats.avgReturn)) : '—'} color={parseFloat(stats.avgReturn) > 0 ? GREEN : RED} sub="on BUY calls (30d)" />
       </div>
 
+      {/* SPY Benchmark — only shows once enough signals have spy data */}
+      {stats.withSpyCount >= 3 && (
+        <div style={{ background:'rgba(0,229,255,0.05)', border:'1px solid rgba(0,229,255,0.2)', borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:CYAN, letterSpacing:'0.5px', marginBottom:10 }}>📊 VS SPY BENCHMARK ({stats.withSpyCount} signals)</div>
+          <div style={{ display:'flex', gap:8 }}>
+            <div style={{ flex:1, textAlign:'center' }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:'#666', marginBottom:4 }}>PULSE BUYs</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'1.1rem', fontWeight:700, color: parseFloat(stats.avgReturn) >= 0 ? GREEN : RED }}>{fmt(parseFloat(stats.avgReturn))}</div>
+            </div>
+            <div style={{ flex:1, textAlign:'center' }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:'#666', marginBottom:4 }}>SPY (same period)</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'1.1rem', fontWeight:700, color: stats.spyAvgReturn >= 0 ? GREEN : RED }}>{fmt(stats.spyAvgReturn)}</div>
+            </div>
+            <div style={{ flex:1, textAlign:'center' }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:'#666', marginBottom:4 }}>ALPHA</div>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'1.1rem', fontWeight:700, color: stats.alpha > 0 ? GREEN : stats.alpha < 0 ? RED : YELLOW }}>
+                {stats.alpha != null ? fmt(stats.alpha) : '—'}
+              </div>
+            </div>
+          </div>
+          {stats.beatSpyRate != null && (
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#666', marginTop:8, textAlign:'center' }}>
+              Beat SPY in {stats.beatSpyRate}% of signals · {stats.beatSpyRate >= 55 ? '✓ Generating alpha' : stats.beatSpyRate >= 45 ? '~ Tracking market' : '✗ Underperforming SPY'}
+            </div>
+          )}
+          <div style={{ fontSize:'0.62rem', color:'#444', marginTop:6, textAlign:'center' }}>
+            SPY benchmark tracking starts from when signals are logged — builds over time
+          </div>
+        </div>
+      )}
+      {stats.withSpyCount < 3 && stats.buyCalls >= 3 && (
+        <div style={{ background:'rgba(0,229,255,0.03)', border:'1px solid rgba(0,229,255,0.1)', borderRadius:10, padding:'10px 14px', marginBottom:12, fontSize:'0.68rem', color:'#555', textAlign:'center' }}>
+          SPY benchmark comparison will appear after {3 - stats.withSpyCount} more BUY signals complete their 30-day tracking window
+        </div>
+      )}
+
       {/* Best/Worst */}
       {stats.hypotheticalPnL != null && (
           <div style={{ background: stats.hypotheticalPnL >= 0 ? 'rgba(0,200,5,0.06)' : 'rgba(255,80,0,0.06)', border: `1px solid ${stats.hypotheticalPnL >= 0 ? '#00C80530' : '#FF500030'}`, borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
