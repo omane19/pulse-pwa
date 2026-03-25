@@ -3,7 +3,6 @@ import { fetchQuote, fetchRegionNews, fetchTickerLite, fetchMarketMovers, fetchM
 import { scoreAsset } from '../utils/scoring.js'
 import { PullToRefresh } from './shared.jsx'
 import { GLOBAL_CHAINS, TICKER_NAMES } from '../utils/constants.js'
-import { useWatchlist } from '../hooks/useWatchlist.js'
 
 const G1='#B2B2B2'; const G2='#111'; const G4='#252525'; const CYAN='#00E5FF'
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'
@@ -319,136 +318,6 @@ function RegionCard({ chain, price, loadingPrices, onNavigate, tickerScores }) {
   )
 }
 
-/* ── Watchlist × Macro Cross-Reference ───────────────────────── */
-function WatchlistMacroXRef({ macroData, watchlist, watchlistScores, onNavigate }) {
-  if (!watchlist?.length || !macroData) return null
-
-  const yc = macroData.yieldCurve
-  const ed = macroData.econData
-  const cpi = ed?.cpi?.value
-  const gdp = ed?.gdp?.value
-  const inverted = yc?.inverted
-
-  let regime = 'neutral'
-  if (inverted && cpi > 4)        regime = 'stagflation'
-  else if (inverted)               regime = 'recession_risk'
-  else if (cpi > 4 && gdp > 2)    regime = 'high_inflation'
-  else if (cpi <= 3 && gdp >= 2)  regime = 'goldilocks'
-  else if (gdp < 1)                regime = 'slowdown'
-
-  const REGIME_LABELS = {
-    stagflation:    'Stagflation risk',
-    recession_risk: 'Recession signal',
-    high_inflation: 'High inflation / strong growth',
-    goldilocks:     'Goldilocks (low inflation + solid growth)',
-    slowdown:       'Slowing growth',
-    neutral:        'Mixed macro signals',
-  }
-
-  const REGIME_MAP = {
-    goldilocks:     { good: ['Technology','Consumer Cyclical','Industrials','Financials'],    bad: ['Utilities','Real Estate'] },
-    high_inflation: { good: ['Energy','Basic Materials'],                                      bad: ['Technology','Real Estate','Utilities','Consumer Cyclical'] },
-    stagflation:    { good: ['Energy','Consumer Defensive','Healthcare'],                      bad: ['Technology','Consumer Cyclical','Financials'] },
-    recession_risk: { good: ['Consumer Defensive','Healthcare','Utilities'],                   bad: ['Financials','Industrials','Consumer Cyclical','Technology'] },
-    slowdown:       { good: ['Consumer Defensive','Healthcare'],                               bad: ['Industrials','Consumer Cyclical'] },
-    neutral:        { good: [], bad: [] },
-  }
-
-  const map = REGIME_MAP[regime] || { good: [], bad: [] }
-
-  // Build reverse ticker→sector lookup from SECTOR_STOCKS
-  const TICKER_SECTOR = {}
-  Object.entries(SECTOR_STOCKS).forEach(([sector, tickers]) => {
-    tickers.forEach(t => { TICKER_SECTOR[t] = sector })
-  })
-
-  const rows = watchlist.map(ticker => {
-    const sector = TICKER_SECTOR[ticker] || null
-    const score  = watchlistScores[ticker]
-    let macroVerdict = 'neutral'
-    let macroNote = sector ? `${sector} — neutral to this macro regime` : 'Sector unknown — assess independently'
-    if (sector && map.good.includes(sector)) {
-      macroVerdict = 'tailwind'
-      macroNote = `${sector} tends to outperform in ${REGIME_LABELS[regime]} environments`
-    } else if (sector && map.bad.includes(sector)) {
-      macroVerdict = 'headwind'
-      macroNote = `${sector} faces headwinds in ${REGIME_LABELS[regime]} — consider reducing exposure`
-    }
-    return { ticker, sector, score, macroVerdict, macroNote }
-  })
-
-  const tailwinds = rows.filter(r => r.macroVerdict === 'tailwind')
-  const headwinds = rows.filter(r => r.macroVerdict === 'headwind')
-  const neutral   = rows.filter(r => r.macroVerdict === 'neutral')
-
-  const ScoreBadge = ({ score }) => {
-    if (!score) return null
-    const color = score.verdict === 'BUY' ? GREEN : score.verdict === 'HOLD' ? YELLOW : RED
-    return <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color, background:`${color}15`, padding:'1px 5px', borderRadius:4, marginLeft:6 }}>{Math.round(score.pct)}</span>
-  }
-
-  const TickerRow = ({ r }) => (
-    <div style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'8px 0', borderBottom:`1px solid ${G4}` }}>
-      <div style={{ flex:1 }}>
-        <div style={{ display:'flex', alignItems:'center', marginBottom:3 }}>
-          <button onClick={() => onNavigate && onNavigate(r.ticker)}
-            style={{ fontFamily:'var(--font-mono)', fontWeight:700, fontSize:'0.78rem',
-              color: r.macroVerdict==='tailwind' ? GREEN : r.macroVerdict==='headwind' ? RED : G1,
-              background:'transparent', border:'none', cursor:'pointer', padding:0 }}>{r.ticker}</button>
-          <ScoreBadge score={r.score} />
-        </div>
-        <div style={{ fontSize:'0.68rem', color:'#888', lineHeight:1.5 }}>{r.macroNote}</div>
-      </div>
-      <button onClick={() => onNavigate && onNavigate(r.ticker)}
-        style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:CYAN, background:`${CYAN}10`,
-          border:`1px solid ${CYAN}25`, borderRadius:5, padding:'3px 7px', cursor:'pointer', flexShrink:0 }}>
-        Dive →
-      </button>
-    </div>
-  )
-
-  return (
-    <div className="card" style={{ marginBottom:16, padding:'16px' }}>
-      <div style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', color:G1, marginBottom:4 }}>
-        🎯 Your Watchlist × Current Macro
-      </div>
-      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:CYAN, marginBottom:12 }}>
-        Regime: {REGIME_LABELS[regime]}
-      </div>
-
-      {tailwinds.length > 0 && (
-        <>
-          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.55rem', color:GREEN, letterSpacing:1, marginBottom:8 }}>✓ MACRO TAILWINDS — favour these</div>
-          {tailwinds.map(r => <TickerRow key={r.ticker} r={r} />)}
-        </>
-      )}
-
-      {headwinds.length > 0 && (
-        <>
-          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.55rem', color:RED, letterSpacing:1, marginTop: tailwinds.length ? 14 : 0, marginBottom:8 }}>⚠ MACRO HEADWINDS — review sizing</div>
-          {headwinds.map(r => <TickerRow key={r.ticker} r={r} />)}
-        </>
-      )}
-
-      {neutral.length > 0 && (
-        <>
-          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.55rem', color:'#555', letterSpacing:1, marginTop: (tailwinds.length || headwinds.length) ? 14 : 0, marginBottom:8 }}>— NEUTRAL TO THIS REGIME</div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-            {neutral.map(r => (
-              <button key={r.ticker} onClick={() => onNavigate && onNavigate(r.ticker)}
-                style={{ fontFamily:'var(--font-mono)', fontSize:'0.66rem', color:G1,
-                  background:'rgba(255,255,255,0.04)', border:`1px solid ${G4}`,
-                  borderRadius:6, padding:'3px 10px', cursor:'pointer' }}>
-                {r.ticker}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
 export default function GlobalImpact({ onNavigate }) {
   const [prices, setPrices]           = useState({})
   const [loadingPrices, setLoadingPrices] = useState(false)
@@ -456,7 +325,6 @@ export default function GlobalImpact({ onNavigate }) {
   const [movers,    setMovers]            = useState(null)
   const [macroData, setMacroData]         = useState(null)
   const [macroTab,  setMacroTab]          = useState('sectors') // sectors | calendar | yield | macro
-  const { list: watchlist } = useWatchlist()
   // notify fn from parent or dummy
   const notify = async () => {}
 
@@ -577,14 +445,6 @@ export default function GlobalImpact({ onNavigate }) {
                 <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#fff', marginBottom:6 }}>{environment}</div>
                 <div style={{ fontSize:'0.78rem', color:G1, lineHeight:1.75 }}>{implication}</div>
               </div>
-            )}
-            {watchlist?.length > 0 && (
-              <WatchlistMacroXRef
-                macroData={macroData}
-                watchlist={watchlist}
-                watchlistScores={tickerScores}
-                onNavigate={onNavigate}
-              />
             )}
             <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, scrollbarWidth:'none', marginBottom:12 }}>
               {TABS.map(t => (

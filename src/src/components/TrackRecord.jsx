@@ -126,92 +126,6 @@ function SignalCard({ signal, onDelete, onExpand, expanded }) {
   )
 }
 
-/* ── Factor Accuracy Breakdown ───────────────────────────────── */
-function FactorAccuracy({ signals }) {
-  const resolved = signals.filter(s => s.verdict === 'BUY' && s.return_30d != null && s.factors && Object.keys(s.factors).length)
-  if (resolved.length < 3) return null
-
-  const factorNames = ['momentum', 'trend', 'valuation', 'sentiment', 'analyst', 'earnings']
-  const LABELS = {
-    momentum: 'Momentum', trend: 'Trend', valuation: 'Valuation',
-    sentiment: 'Sentiment', analyst: 'Analyst', earnings: 'Earnings'
-  }
-
-  const stats = factorNames.map(factor => {
-    const withFactor = resolved.filter(s => s.factors[factor] != null)
-    if (withFactor.length < 2) return null
-
-    const bullish   = withFactor.filter(s => s.factors[factor] > 0.1)
-    const bearish   = withFactor.filter(s => s.factors[factor] <= 0.1)
-    const bullWins  = bullish.filter(s => s.return_30d > 0).length
-    const accuracy  = bullish.length > 0 ? Math.round(bullWins / bullish.length * 100) : null
-
-    const avgPos = bullish.length
-      ? parseFloat((bullish.reduce((a, s) => a + s.return_30d, 0) / bullish.length).toFixed(1)) : null
-    const avgNeg = bearish.length
-      ? parseFloat((bearish.reduce((a, s) => a + s.return_30d, 0) / bearish.length).toFixed(1)) : null
-    const edge = avgPos != null && avgNeg != null ? parseFloat((avgPos - avgNeg).toFixed(1)) : null
-
-    return { factor, label: LABELS[factor], accuracy, edge, avgPos, avgNeg, bullishCalls: bullish.length, total: withFactor.length }
-  }).filter(s => s && s.bullishCalls >= 2)
-
-  if (!stats.length) return null
-
-  const sorted = [...stats].sort((a, b) => (b.accuracy ?? 0) - (a.accuracy ?? 0))
-  const best = sorted[0]
-
-  return (
-    <>
-      <SectionHeader>Factor Accuracy Breakdown</SectionHeader>
-      <div style={{ background:G2, border:`1px solid ${G4}`, borderRadius:12, padding:'16px', marginBottom:16 }}>
-        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#555', letterSpacing:'0.5px', marginBottom:12 }}>
-          WHICH FACTOR PREDICTED YOUR WINS — {resolved.length} resolved BUY signals
-        </div>
-
-        {best && (
-          <div style={{ background:'rgba(0,200,5,0.06)', border:'1px solid rgba(0,200,5,0.2)', borderRadius:8, padding:'10px 14px', marginBottom:16 }}>
-            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:GREEN, marginBottom:4, letterSpacing:'0.5px' }}>🏆 MOST PREDICTIVE FACTOR</div>
-            <div style={{ fontSize:'0.92rem', fontWeight:700, color:'#fff', marginBottom:4 }}>{best.label}</div>
-            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.68rem', color:GREEN }}>
-              {best.accuracy}% win rate · {best.bullishCalls} bullish calls
-              {best.edge != null ? ` · +${best.edge}% edge vs. when ${best.label.toLowerCase()} negative` : ''}
-            </div>
-          </div>
-        )}
-
-        {sorted.map((s, i) => {
-          const barPct = s.accuracy ?? 0
-          const color  = barPct >= 65 ? GREEN : barPct >= 50 ? YELLOW : RED
-          return (
-            <div key={s.factor} style={{ marginBottom: i < sorted.length - 1 ? 12 : 0 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.65rem', color:'#AAA' }}>{s.label}</span>
-                <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.65rem', color }}>
-                  {s.accuracy != null ? `${s.accuracy}%` : '—'}
-                  <span style={{ color:'#444', marginLeft:6 }}>({s.bullishCalls} calls)</span>
-                </span>
-              </div>
-              <div style={{ height:5, background:'#2A2A2A', borderRadius:3, overflow:'hidden', marginBottom:4 }}>
-                <div style={{ width:`${barPct}%`, height:'100%', background:color, borderRadius:3, transition:'width 0.6s ease' }}/>
-              </div>
-              {s.avgPos != null && s.avgNeg != null && (
-                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.57rem', color:'#444', display:'flex', gap:12 }}>
-                  <span>When positive: <span style={{ color: s.avgPos >= 0 ? GREEN : RED }}>{s.avgPos >= 0 ? '+' : ''}{s.avgPos}%</span></span>
-                  <span>When negative: <span style={{ color: s.avgNeg >= 0 ? GREEN : RED }}>{s.avgNeg >= 0 ? '+' : ''}{s.avgNeg}%</span></span>
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.55rem', color:'#2A2A2A', marginTop:14, lineHeight:1.5 }}>
-          Win rate = % of times this factor was bullish AND stock returned {'>'} 0% over 30 days · Requires ≥3 signals to activate
-        </div>
-      </div>
-    </>
-  )
-}
-
 export default function TrackRecord() {
   const [signals,    setSignals]    = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -384,8 +298,6 @@ export default function TrackRecord() {
           {updating ? 'Updating…' : '🔄 Update Outcomes'}
         </button>
       </div>
-
-      <FactorAccuracy signals={signals} />
 
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>

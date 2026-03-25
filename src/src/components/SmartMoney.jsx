@@ -83,7 +83,6 @@ function TickerSearch({ onSearch }) {
 
 export default function SmartMoney({ onNavigateToDive }) {
   const [tab, setTab] = useState('feed')  // 'feed' | 'search'
-  const [buyOnly, setBuyOnly] = useState(true)
   const [congressFeed, setCongressFeed] = useState([])
   const [insiderFeed,  setInsiderFeed]  = useState([])
   const [loadingFeed,  setLoadingFeed]  = useState(false)
@@ -193,27 +192,8 @@ export default function SmartMoney({ onNavigateToDive }) {
                   ))}
                 </div>
               )}
-              {/* Buy-only toggle */}
-              <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12 }}>
-                <button onClick={() => setBuyOnly(b => !b)} style={{
-                  fontFamily:'var(--font-mono)', fontSize:'0.62rem', padding:'5px 14px', borderRadius:6,
-                  background: buyOnly ? 'rgba(0,255,136,0.12)' : 'rgba(255,255,255,0.05)',
-                  border: buyOnly ? '1px solid rgba(0,255,136,0.35)' : '1px solid rgba(255,255,255,0.1)',
-                  color: buyOnly ? '#00ff88' : '#888', cursor:'pointer', letterSpacing:0.3
-                }}>
-                  {buyOnly ? '▲ Buys Only' : '▲▼ All Trades'}
-                </button>
-              </div>
-              <Section title={buyOnly ? 'CONGRESSIONAL BUYS' : 'CONGRESSIONAL TRADES'} icon="🏛️"
-                items={buyOnly ? congressFeed.filter(t => t.isBuy) : congressFeed}
-                type="congress" loading={loadingFeed}
-                empty={buyOnly ? 'No recent congressional purchases found' : 'No recent congressional trades found'}
-                onNavigate={onNavigateToDive} />
-              <Section title={buyOnly ? 'CEO / EXECUTIVE BUYS' : 'CEO / EXECUTIVE TRADES'} icon="💼"
-                items={buyOnly ? insiderFeed.filter(t => t.isBuy) : insiderFeed}
-                type="insider" loading={loadingFeed}
-                empty={buyOnly ? 'No recent executive purchases found' : 'No recent executive trades found'}
-                onNavigate={onNavigateToDive} />
+              <Section title="CONGRESSIONAL BUYS" icon="🏛️" items={congressFeed} type="congress" loading={loadingFeed} empty="No recent congressional purchases found" onNavigate={onNavigateToDive} />
+              <Section title="CEO / EXECUTIVE BUYS" icon="💼" items={insiderFeed.filter(t => t.isBuy)} type="insider" loading={loadingFeed} empty="No recent executive purchases found" onNavigate={onNavigateToDive} />
             </>
           )
         })()}
