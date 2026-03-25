@@ -12,9 +12,9 @@ let TRADIER_KEY  = () => getKey('VITE_TRADIER_KEY')  // kept for fallback compat
 let POLYGON_KEY  = () => getKey('VITE_POLYGON_KEY')
 
 export function hasKeys() {
-  // Keys are stored server-side in Vercel (no VITE_ prefix) — browser can't read them.
-  // Always return true and let the proxy handle missing key errors.
-  return { fh: true, av: true, fmp: true, polygon: POLYGON_KEY().length > 8 }
+  // All keys are server-side in Vercel env vars — proxy handles them
+  // Client-side key detection is always true when deployed
+  return { fh: true, av: true, fmp: true, polygon: true }
 }
 
 /* ── Cache (max 300 entries, evict oldest on overflow) ── */
