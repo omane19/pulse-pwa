@@ -17,14 +17,14 @@ export function hasKeys() {
   return { fh: true, av: true, fmp: true, polygon: true }
 }
 
-/* ── Cache (max 300 entries, evict oldest on overflow) ── */
+/* ── Cache (max 500 entries, evict oldest 100 on overflow) ── */
 const cache = new Map()
-const MAX_CACHE = 300
+const MAX_CACHE = 500
 function cGet(k, ttl) { const e = cache.get(k); return e && Date.now()-e.ts < ttl ? e.d : null }
 function cSet(k, d)   {
   if (cache.size >= MAX_CACHE) {
-    // Evict oldest 50 entries
-    const keys = [...cache.keys()].slice(0, 50)
+    // Evict oldest 100 entries to reduce churn during Screener runs
+    const keys = [...cache.keys()].slice(0, 100)
     keys.forEach(key => cache.delete(key))
   }
   cache.set(k, { d, ts: Date.now() })
@@ -209,10 +209,16 @@ export async function fetchMetrics(ticker) {
     const inc = Array.isArray(incomeArr)   ? incomeArr      : []
     const bs  = Array.isArray(balanceArr)  ? balanceArr[0]  : balanceArr
     if (p?.symbol) {
-      // Revenue growth YoY
+      // Revenue growth YoY — validate both statements are annual to avoid quarterly mix
       let revenueGrowthYoY = null
       if (inc.length >= 2 && inc[0].revenue && inc[1].revenue) {
-        revenueGrowthYoY = parseFloat(((inc[0].revenue - inc[1].revenue) / Math.abs(inc[1].revenue) * 100).toFixed(1))
+        // Confirm annual period: FMP annual statements have dates ~12 months apart
+        const d0 = inc[0].date ? new Date(inc[0].date) : null
+        const d1 = inc[1].date ? new Date(inc[1].date) : null
+        const monthsApart = (d0 && d1) ? Math.abs((d0 - d1) / (1000 * 60 * 60 * 24 * 30)) : 12
+        if (monthsApart >= 9) { // only compute if statements are at least 9 months apart
+          revenueGrowthYoY = parseFloat(((inc[0].revenue - inc[1].revenue) / Math.abs(inc[1].revenue) * 100).toFixed(1))
+        }
       }
       // FCF per share
       const sharesOutstanding = p.sharesOutstanding || cf?.weightedAverageShsOut || (p.mktCap && p.price ? p.mktCap / p.price : null)
@@ -355,24 +361,21 @@ export async function fetchRegionNews(proxy) {
    ANALYST, EARNINGS, PROFILE, INSIDER
 ══════════════════════════════════════════ */
 export async function fetchRec(ticker) {
-  if (false) {  // analyst-stock-recommendations not available on current FMP plan
-    try {
-      const d = await fmp(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
-      if (Array.isArray(d) && d.length) {
-        // FMP returns array sorted newest first
-        // Normalize field names to match what scoreAsset expects
-        const normalize = (r) => ({
-          strongBuy:   r.analystRatingsStrongBuy  || 0,
-          buy:         r.analystRatingsBuy         || 0,
-          hold:        r.analystRatingsHold        || 0,
-          sell:        r.analystRatingsSell        || 0,
-          strongSell:  r.analystRatingsStrongSell  || 0,
-          period:      r.date || null,
-        })
-        return { current: normalize(d[0]), history: d.slice(0, 12).map(normalize) }
-      }
-    } catch {}
-  }
+  // Try FMP analyst stock recommendations first (available on FMP Starter+)
+  try {
+    const d = await fmp(`/analyst-stock-recommendations?symbol=${ticker}&limit=12`, 300000)
+    if (Array.isArray(d) && d.length) {
+      const normalize = (r) => ({
+        strongBuy:  r.analystRatingsStrongBuy  || 0,
+        buy:        r.analystRatingsBuy         || 0,
+        hold:       r.analystRatingsHold        || 0,
+        sell:       r.analystRatingsSell        || 0,
+        strongSell: r.analystRatingsStrongSell  || 0,
+        period:     r.date || null,
+      })
+      return { current: normalize(d[0]), history: d.slice(0, 12).map(normalize) }
+    }
+  } catch {}
   // Finnhub fallback
   const d = await fh(`/stock/recommendation?symbol=${ticker}`, 300000)
   if (!Array.isArray(d) || !d.length) return { current: {}, history: [] }
@@ -766,15 +769,14 @@ export async function fetchPeers(ticker) {
 
 export async function fetchTickerLite(ticker) {
   try {
-    const [quote, candles, metrics, rec, earnings, news, priceTarget, upgrades, score, rating] = await Promise.all([
+    const [quote, candles, metrics, rec, earnings, news, score] = await Promise.all([
       fetchQuote(ticker), fetchCandles(ticker, 260), fetchMetrics(ticker),
       fetchRec(ticker), fetchEarnings(ticker), fetchNews(ticker, 5),
-      fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker),
-      fetchScore(ticker), fetchRating(ticker)
+      fetchScore(ticker)
     ])
     if (!quote) return null
     const ea = v => Array.isArray(v) ? v : []
-    return { ticker, quote, candles, metrics: metrics || {}, news: ea(news), rec: rec || {}, earnings: ea(earnings), priceTarget: priceTarget || null, upgrades: ea(upgrades), score: score || null, rating: rating || null }
+    return { ticker, quote, candles, metrics: metrics || {}, news: ea(news), rec: rec || {}, earnings: ea(earnings), priceTarget: null, upgrades: [], score: score || null, rating: null }
   } catch { return null }
 }
 
@@ -1275,18 +1277,18 @@ export function useTickerData() {
         return
       }
       const [candles, metrics, news, rec, earnings, profile, insider, ec,
-             priceTarget, upgrades, peers, score, rating, dcf, sharesFloat,
-             priceChange, keyMetrics, incomeGrowth, cfGrowth, bsGrowth,
-             revenueSegments, dividends] = await Promise.all([
+             peers, score, dcf, sharesFloat,
+             priceChange, incomeGrowth, cfGrowth,
+             revenueSegments, dividends, regimeData] = await Promise.all([
         fetchCandles(ticker), fetchMetrics(ticker), fetchNews(ticker),
         fetchRec(ticker), fetchEarnings(ticker), fetchProfile(ticker),
         fetchFMPInsider(ticker), fetchEarningsCalendar(ticker),
-        fetchPriceTarget(ticker), fetchUpgradesDowngrades(ticker),
-        fetchPeers(ticker), fetchScore(ticker), fetchRating(ticker),
+        fetchPeers(ticker), fetchScore(ticker),
         fetchDCF(ticker), fetchSharesFloat(ticker), fetchPriceChange(ticker),
-        fetchKeyMetrics(ticker), fetchIncomeGrowth(ticker),
-        fetchCashFlowGrowth(ticker), fetchBalanceSheetGrowth(ticker),
-        fetchRevenueSegments(ticker), fetchDividends(ticker)
+        fetchIncomeGrowth(ticker),
+        fetchCashFlowGrowth(ticker),
+        fetchRevenueSegments(ticker), fetchDividends(ticker),
+        fetchRegimeData(ticker)
       ])
       // Compute MACD locally from candles — no extra API call
       const macd = Array.isArray(candles?.closes) && candles.closes.length >= 30 ? calcMACD(candles.closes) : null
@@ -1296,14 +1298,15 @@ export function useTickerData() {
         ticker, quote, candles, metrics: metrics || {}, news: ensureArr(news),
         rec: rec || {}, earnings: ensureArr(earnings), profile: profile || {},
         insider: ensureArr(insider), ec,
-        priceTarget: priceTarget || null, upgrades: ensureArr(upgrades),
+        priceTarget: null, upgrades: [],
         macd: macd || null, peers: ensureArr(peers),
-        score: score || null, rating: rating || null,
+        score: score || null, rating: null,
         dcf: dcf || null, sharesFloat: sharesFloat || null,
         priceChange: priceChange || null,
-        keyMetrics: keyMetrics || null, incomeGrowth: incomeGrowth || null,
-        cfGrowth: cfGrowth || null, bsGrowth: bsGrowth || null,
-        revenueSegments: revenueSegments || null, dividends: dividends || null
+        keyMetrics: null, incomeGrowth: incomeGrowth || null,
+        cfGrowth: cfGrowth || null, bsGrowth: null,
+        revenueSegments: revenueSegments || null, dividends: dividends || null,
+        regimeData: regimeData || null
       })
     } catch { setError('Network error — check your connection and try again.') }
     finally  { setLoading(false) }

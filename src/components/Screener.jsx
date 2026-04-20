@@ -462,34 +462,47 @@ export default function Screener({ onNavigateToDive }) {
   // Top N mode: group by category, take top N each, sort categories by their best score
   const topNGrouped = useMemo(() => {
     if (mode !== 'topN' || !ran) return null
+
+    // Global seen set — once a ticker is placed in one segment it cannot appear in another
+    // Fixes the core repetition bug where NVDA scored top in 4 segments simultaneously
+    const seen = new Set()
     const groups = {}
+
     // First try grouping by UNIVERSE membership (curated list path)
     for (const cat of selCats) {
       const catResults = results
-        .filter(r => UNIVERSE[cat]?.includes(r.ticker) || r.category === cat)
+        .filter(r => (UNIVERSE[cat]?.includes(r.ticker) || r.category === cat) && !seen.has(r.ticker))
         .sort((a, b) => b.result.pct - a.result.pct)
         .slice(0, topN)
+      catResults.forEach(r => seen.add(r.ticker))
       if (catResults.length > 0) groups[cat] = catResults
     }
+
     // If no groups formed (FMP bulk path — tickers not in UNIVERSE)
     // Fall back to grouping by r.category which was assigned during scan
     if (Object.keys(groups).length === 0) {
+      const seenFallback = new Set()
       for (const r of results) {
+        if (seenFallback.has(r.ticker)) continue
         const cat = r.category || 'Market'
         if (!groups[cat]) groups[cat] = []
         groups[cat].push(r)
+        seenFallback.add(r.ticker)
       }
-      // Take topN from each group
       for (const cat of Object.keys(groups)) {
         groups[cat] = groups[cat]
           .sort((a, b) => b.result.pct - a.result.pct)
           .slice(0, topN)
       }
     }
+
     if (customTickers.length > 0) {
-      const customResults = results.filter(r => customTickers.includes(r.ticker)).slice(0, topN)
+      const customResults = results
+        .filter(r => customTickers.includes(r.ticker) && !seen.has(r.ticker))
+        .slice(0, topN)
       if (customResults.length > 0) groups['Custom'] = customResults
     }
+
     // Sort groups by their best score descending
     return Object.entries(groups).sort((a, b) => b[1][0].result.pct - a[1][0].result.pct)
   }, [results, mode, topN, selCats, customTickers, ran])

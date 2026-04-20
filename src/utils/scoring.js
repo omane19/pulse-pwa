@@ -147,13 +147,14 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     else mr.push(`RSI ${rsi} — neutral`)
   }
   // Volume spike — direction-aware confirmation using 1m trend context not 1-day
+  // Use quote.v (today's live volume) not candle[-1] which is yesterday's EOD close
   const vols = Array.isArray(candles?.volumes) ? candles.volumes : []
   if (vols.length >= 20) {
-    const recent = vols[vols.length - 1] || 0
-    const avgVol = (Array.isArray(vols) ? vols : []).slice(-20, -1).reduce((a, b) => a + b, 0) / 19
+    const liveVol = (quote?.v && quote.v > 0) ? quote.v : (vols[vols.length - 1] || 0)
+    const avgVol = vols.slice(-20, -1).reduce((a, b) => a + b, 0) / 19
     if (avgVol > 0) {
-      const volRatio = recent / avgVol
-      const trendUp = (mom['1m'] || 0) >= 0  // use 1m trend, not 1-day noise
+      const volRatio = liveVol / avgVol
+      const trendUp = (mom['1m'] || 0) >= 0
       if (volRatio >= 2.5) {
         if (trendUp)  { ms += 0.3;  mr.push(`🔥 Volume ${volRatio.toFixed(1)}× avg — strong buying pressure`) }
         else          { ms -= 0.3;  mr.push(`🔥 Volume ${volRatio.toFixed(1)}× avg — distribution signal`) }
@@ -467,10 +468,19 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   }
 
   // ── MARKET REGIME WEIGHTING ──
-  // Detect regime from SPY-like signals: if the asset's own 3m momentum is strongly negative
-  // we're likely in a bear regime for this stock — weight trend/momentum more heavily
-  const ownMom6m = mom['6m'] || mom['3m'] || 0
-  const inBearRegime = ownMom6m < -20 && (S.trend < -0.2)
+  // Use SPY regimeData (passed from useTickerData) not the stock's own momentum
+  // Using own momentum was circular — it penalised quality dip stocks (down 25%) as "bear"
+  // even though the broader market is healthy and the dip is a buying opportunity
+  const regimeData = extras?.regimeData || null
+  const spyBelowMA = regimeData?.spyPrice && regimeData?.spyMA50
+    ? regimeData.spyPrice < regimeData.spyMA50
+    : false
+  const sectorBelowMA = regimeData?.sectorPrice && regimeData?.sectorMA50
+    ? regimeData.sectorPrice < regimeData.sectorMA50
+    : false
+  // Bear regime: SPY itself is below its 50-day MA AND sector is also weak
+  // Do NOT fire bear regime purely because this stock is down (that's a dip, not a regime)
+  const inBearRegime = spyBelowMA && sectorBelowMA
   // Bear regime: same 6 factors as normal, reweighted toward trend+momentum
   // Removed smartmoney from bear weights — bear stocks rarely have insider buys,
   // so including it would silently lose 10% of weight when data is absent
@@ -549,7 +559,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   if (rawVerdict === 'HOLD' && adjustedTotal < -0.20) rawVerdict = 'AVOID'
   if (rawVerdict === 'AVOID' && isQualityDip) rawVerdict = 'HOLD'  // quality dip floor is HOLD
 
-  const pct = Math.round((adjustedTotal + 1) / 2 * 100 * 10) / 10
+  const pct = Math.min(100, Math.max(0, Math.round((adjustedTotal + 1) / 2 * 100 * 10) / 10))
   const verdict = rawVerdict
   const color = verdict === 'BUY' ? '#00C805' : verdict === 'HOLD' ? '#FFD700' : '#FF5000'
 

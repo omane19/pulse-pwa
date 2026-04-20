@@ -11,6 +11,7 @@ import SmartMoney from './components/SmartMoney.jsx'
 import TrackRecord from './components/TrackRecord.jsx'
 import Portfolio from './components/Portfolio.jsx'
 import Onboarding from './components/Onboarding.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 /* ── Icons ── */
 function IconDive({ active }) {
@@ -107,16 +108,16 @@ export default function App() {
       </header>
 
       <main className="page-area">
-        <div style={{display: activeTab==='dive'      ? 'contents' : 'none'}}><DeepDive initialTicker={diveQuery.ticker} diveVersion={diveQuery.version} onNavigate={navigateToDive} /></div>
-        <div style={{display: activeTab==='watch'     ? 'contents' : 'none'}}><Watchlist onNavigateToDive={navigateToDive} /></div>
-        <div style={{display: activeTab==='screen'    ? 'contents' : 'none'}}><Screener onNavigateToDive={navigateToDive} /></div>
-        <div style={{display: activeTab==='options'   ? 'contents' : 'none'}}><Options onNavigateToDive={navigateToDive} /></div>
-        <div style={{display: activeTab==='money'     ? 'contents' : 'none'}}><SmartMoney onNavigateToDive={navigateToDive} /></div>
-        <div style={{display: activeTab==='compare'   ? 'contents' : 'none'}}><Compare /></div>
-        <div style={{display: activeTab==='global'    ? 'contents' : 'none'}}><GlobalImpact onNavigate={navigateToDive} /></div>
-        <div style={{display: activeTab==='learn'     ? 'contents' : 'none'}}><Learn /></div>
-        <div style={{display: activeTab==='track'     ? 'contents' : 'none'}}><TrackRecord /></div>
-        <div style={{display: activeTab==='portfolio' ? 'contents' : 'none'}}><Portfolio onNavigateToDive={navigateToDive} /></div>
+        <div style={{display: activeTab==='dive'      ? 'contents' : 'none'}}><ErrorBoundary><DeepDive initialTicker={diveQuery.ticker} diveVersion={diveQuery.version} onNavigate={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='watch'     ? 'contents' : 'none'}}><ErrorBoundary><Watchlist onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='screen'    ? 'contents' : 'none'}}><ErrorBoundary><Screener onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='options'   ? 'contents' : 'none'}}><ErrorBoundary><Options onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='money'     ? 'contents' : 'none'}}><ErrorBoundary><SmartMoney onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='compare'   ? 'contents' : 'none'}}><ErrorBoundary><Compare /></ErrorBoundary></div>
+        <div style={{display: activeTab==='global'    ? 'contents' : 'none'}}><ErrorBoundary><GlobalImpact onNavigate={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='learn'     ? 'contents' : 'none'}}><ErrorBoundary><Learn /></ErrorBoundary></div>
+        <div style={{display: activeTab==='track'     ? 'contents' : 'none'}}><ErrorBoundary><TrackRecord /></ErrorBoundary></div>
+        <div style={{display: activeTab==='portfolio' ? 'contents' : 'none'}}><ErrorBoundary><Portfolio onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
       </main>
 
       <nav className="bottom-nav">
