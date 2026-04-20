@@ -357,8 +357,11 @@ export default function Screener({ onNavigateToDive }) {
           }
           setProgress(Math.round(Math.min(i + BATCH, bulk.length) / bulk.length * 100))
         }
-        out.sort((a, b) => b.result.pct - a.result.pct)
-        setResults(out); setLoading(false); setRan(true)
+        // Dedup by ticker — FMP bulk can return same ticker multiple times
+        const seenBulk = new Set()
+        const dedupedOut = out.filter(r => { if (seenBulk.has(r.ticker)) return false; seenBulk.add(r.ticker); return true })
+        dedupedOut.sort((a, b) => b.result.pct - a.result.pct)
+        setResults(dedupedOut); setLoading(false); setRan(true)
         return
       }
     }
@@ -382,8 +385,11 @@ export default function Screener({ onNavigateToDive }) {
       setProgress(Math.round(Math.min(i + BATCH, tickers.length) / tickers.length * 100))
     }
 
-    out.sort((a, b) => b.result.pct - a.result.pct)
-    setResults(out); setLoading(false); setRan(true)
+    // Dedup by ticker (belt+suspenders — Set on tickers should prevent this but guard anyway)
+    const seenCurated = new Set()
+    const dedupedCurated = out.filter(r => { if (seenCurated.has(r.ticker)) return false; seenCurated.add(r.ticker); return true })
+    dedupedCurated.sort((a, b) => b.result.pct - a.result.pct)
+    setResults(dedupedCurated); setLoading(false); setRan(true)
   }, [allTickers, selCats, customTickers])
 
   // ── Dividend scan — uses /stable/dividends-calendar (one call, all payers this month) ──
