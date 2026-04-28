@@ -66,6 +66,93 @@ export function calcMom(candles, quote) {
   return out
 }
 
+
+// ── ETF detection ────────────────────────────────────────────────────────────
+// ETFs cannot be scored with the stock model — no earnings, no P/E, no analyst coverage
+// Explicit set of all ETFs in the PULSE universe
+const ETF_TICKERS = new Set([
+  'SPY','QQQ','IWM','VTI','DIA','RSP','VOO','MDY','IJR','IVV','SCHB','ITOT','SCHA',
+  'XLK','XLE','XLF','XLV','XLY','XLP','XLRE','XLB','XLI','XLU','XLC','XBI','IBB','KRE','ITB','XHB','XRT','XME',
+  'EFA','EEM','VEA','VWO','EWJ','FXI','EWZ','EWY','EWG','EWU','EWC','EWA','INDA','KWEB',
+  'TLT','AGG','HYG','LQD','BND','SHY','IEF','VCIT','VCSH','MUB','TIP','GOVT','EMB','JNK',
+  'GLD','SLV','IAU','USO','DBA','PDBC','CPER','UNG','WEAT','CORN','SOYB','DBB',
+])
+
+export function isETF(ticker) {
+  if (!ticker) return false
+  // Explicit list check
+  if (ETF_TICKERS.has(ticker.toUpperCase())) return true
+  // Heuristic: no P/E, no earnings estimates, no analyst coverage = likely ETF/fund
+  return false
+}
+
+// ── ETF Scoring model ────────────────────────────────────────────────────────
+// ETFs are scored purely on price signals: momentum, trend, relative strength
+// Valuation, earnings, analyst are irrelevant for funds
+export function scoreETF(quote, candles, ma50, extras = {}) {
+  const _a = v => Array.isArray(v) ? v : []
+  const mom = calcMom(candles || { closes:[], volumes:[], highs:[], lows:[], opens:[], timestamps:[] }, quote)
+  const S = {}; const R = {}
+
+  // Momentum — same logic as stock model
+  let ms = 0; const mr = []
+  if ('1m' in mom) { const w = Math.max(-.35, Math.min(.35, mom['1m'] / 15)); ms += w; mr.push(`1-month ${mom['1m'] > 0 ? '+' : ''}${mom['1m']}%`) }
+  if ('3m' in mom) { const w = Math.max(-.35, Math.min(.35, mom['3m'] / 20)); ms += w; mr.push(`3-month ${mom['3m'] > 0 ? '+' : ''}${mom['3m']}%`) }
+  if ('6m' in mom) { const w = Math.max(-.25, Math.min(.25, mom['6m'] / 30)); ms += w; mr.push(`6-month ${mom['6m'] > 0 ? '+' : ''}${mom['6m']}%`) }
+  if ('1y' in mom) { const w = Math.max(-.20, Math.min(.20, mom['1y'] / 50)); ms += w; mr.push(`1-year ${mom['1y'] > 0 ? '+' : ''}${mom['1y']}%`) }
+  if ('rsi' in mom) {
+    const rsi = mom['rsi']
+    if (rsi < 30) { ms += .3; mr.push(`RSI ${rsi} — oversold`) }
+    else if (rsi > 70) { ms -= .2; mr.push(`RSI ${rsi} — overbought`) }
+    else mr.push(`RSI ${rsi}`)
+  }
+  S.momentum = Math.max(-1, Math.min(1, ms)); R.momentum = mr
+
+  // Trend — MA50 and MA200
+  let ts = 0; const tr = []
+  const price = quote?.c || 0
+  const ma200 = candles?.ma200 || null
+  if (price && ma50) { const pct = (price - ma50) / ma50 * 100; ts += Math.max(-0.7, Math.min(0.7, pct / 10)); tr.push(`Price ${Math.abs(pct).toFixed(1)}% ${pct >= 0 ? 'above' : 'below'} 50-day MA ($${ma50})`) }
+  if (price && ma200) { const pct200 = (price - ma200) / ma200 * 100; ts += Math.max(-0.3, Math.min(0.3, pct200 / 15)); tr.push(`200-day MA: $${ma200}`) }
+  S.trend = Math.max(-1, Math.min(1, ts)); R.trend = tr
+
+  // Volume confirmation
+  const vols = _a(candles?.volumes)
+  let vs2 = 0
+  if (vols.length >= 20) {
+    const liveVol = (quote?.v && quote.v > 0) ? quote.v : (vols[vols.length - 1] || 0)
+    const avgVol = vols.slice(-20, -1).reduce((a, b) => a + b, 0) / 19
+    if (avgVol > 0) {
+      const ratio = liveVol / avgVol
+      const trendUp = (mom['1m'] || 0) >= 0
+      if (ratio >= 2.0) vs2 = trendUp ? 0.3 : -0.3
+      else if (ratio >= 1.5) vs2 = trendUp ? 0.15 : -0.15
+    }
+  }
+  S.volume = Math.max(-1, Math.min(1, vs2)); R.volume = ['Volume confirmation']
+
+  // ETF weights — only 3 real factors
+  const W = { momentum: 0.45, trend: 0.40, volume: 0.15 }
+  const total = Object.entries(W).reduce((sum, [k, w]) => sum + (S[k] || 0) * w, 0)
+  const pct = Math.min(100, Math.max(0, Math.round((total + 1) / 2 * 100 * 10) / 10))
+
+  const verdict = total >= 0.25 ? 'BUY' : total >= -0.10 ? 'HOLD' : 'AVOID'
+  const color = verdict === 'BUY' ? '#00C805' : verdict === 'HOLD' ? '#FFD700' : '#FF5000'
+  const conviction = parseFloat(Math.max(0, Math.min(100,
+    ((S.momentum > 0 ? 1 : 0) + (S.trend > 0 ? 1 : 0)) / 2 * 60 +
+    (Math.abs(S.momentum) + Math.abs(S.trend)) / 2 * 40
+  )).toFixed(1))
+
+  return {
+    scores: S, reasons: R, total: parseFloat(total.toFixed(3)), pct, verdict, color,
+    mom, avgSent: 0, scoredNews: [], conviction, uncertainty: ['ETF — scored on momentum + trend only'],
+    factorsAgree: Object.values(S).filter(v => v > 0.1).length,
+    pe: null, contradictions: [], inBearRegime: false, marketRegimeWeak: false, regimeLabel: null,
+    isQualityDip: false, qualityDipLabel: null, qualityDipBonus: 0, upside: null,
+    isETF: true
+  }
+}
+
 export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smartMoney, extras = {}) {
   // Debug logging to find crash source
   try {
@@ -103,6 +190,13 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   } else {
     candles = { closes: [], volumes: [], highs: [], lows: [], opens: [], timestamps: [] }
   }
+  // ETF routing — ETFs use a simplified momentum+trend model
+  // Running the stock model on ETFs produces structurally biased scores (no P/E, no earnings, no analysts)
+  const _tickerUpper = (extras?.ticker || '').toUpperCase()
+  if (isETF(_tickerUpper)) {
+    return scoreETF(quote, candles, ma50, extras)
+  }
+
   // smartMoney: { insiderBuys, congressBuys, cluster } — optional 7th factor
   const hasSmartMoney = smartMoney?.insiderBuys != null
   // Weights v28 — data-driven from 735-signal backtest (Mar 2026)
@@ -490,7 +584,34 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     ? (hasSmartMoney ? bearW7 : bearW6)
     : W  // bull/neutral — use original weights
 
-  const total = Object.entries(regimeW).reduce((sum, [k, w]) => sum + (S[k] || 0) * w, 0) - contradictionPenalty
+  // Factor confidence weighting — exclude factors with no data from denominator
+  // When analyst/earnings/valuation has no data, S[k] = 0 which looks neutral
+  // but it's actually "unknown" — don't penalize the stock for missing data
+  // Detect missing data per factor:
+  const factorHasData = {
+    momentum:   Array.isArray(candles?.closes) && candles.closes.length >= 21,
+    trend:      !!(ma50),
+    valuation:  !!(metrics?.peTTM || metrics?.pegRatio || metrics?.fcfPerShare),
+    sentiment:  (news?.length || 0) >= 2,
+    analyst:    !!(rec?.current && Object.keys(rec.current || {}).length > 0 && ((rec.current.strongBuy||0)+(rec.current.buy||0)+(rec.current.hold||0)+(rec.current.sell||0)+(rec.current.strongSell||0)) > 0),
+    earnings:   (earn?.filter(q => q.estimate != null && q.actual != null).length || 0) >= 1,
+    smartmoney: hasSmartMoney,
+  }
+  // Compute effective weights — zero out missing factors then renormalize
+  const effectiveW = {}
+  let weightSum = 0
+  for (const [k, w] of Object.entries(regimeW)) {
+    const ew = factorHasData[k] !== false ? w : 0
+    effectiveW[k] = ew
+    weightSum += ew
+  }
+  // Renormalize to sum to 1.0
+  if (weightSum > 0 && weightSum < 0.99) {
+    for (const k of Object.keys(effectiveW)) effectiveW[k] = effectiveW[k] / weightSum
+  }
+  const total = Object.entries(effectiveW).reduce((sum, [k, w]) => sum + (S[k] || 0) * w, 0) - contradictionPenalty
+  // Confidence penalty: fewer factors with data = lower conviction
+  const dataCompleteness = Object.values(factorHasData).filter(Boolean).length / Object.keys(factorHasData).length
 
   // ── MINIMUM THRESHOLD ENFORCEMENT (Piotroski-inspired) ──
   // BUY requires score AND independent factor agreement
@@ -582,10 +703,24 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   if (isQualityDip) uncertainty.push(`${qualityDipLabel}`)
 
   const upside = extras?.priceTarget?.target && currentPrice ? parseFloat(((extras.priceTarget.target - currentPrice) / currentPrice * 100).toFixed(1)) : null
+  // Stale data detection
+  const now = Date.now() / 1000  // unix seconds
+  const newestNews = news?.length ? Math.max(...news.map(n => n.ts || 0)) : 0
+  const newsAgeDays = newestNews > 0 ? Math.floor((Date.now() / 1000 - newestNews) / 86400) : null
+  const analystPeriod = rec?.current?.period || rec?.history?.[0]?.period || null
+  const analystAgeDays = analystPeriod ? Math.floor((Date.now() - new Date(analystPeriod).getTime()) / 86400000) : null
+  const stalenessFlags = []
+  if (newsAgeDays === null || newsAgeDays > 10) stalenessFlags.push({ field: 'news', label: newsAgeDays === null ? 'No news data' : `News ${newsAgeDays}d old`, severity: newsAgeDays > 20 ? 'high' : 'medium' })
+  if (analystAgeDays !== null && analystAgeDays > 60) stalenessFlags.push({ field: 'analyst', label: `Analyst data ${analystAgeDays}d old`, severity: analystAgeDays > 120 ? 'high' : 'medium' })
+  if (!factorHasData.earnings) stalenessFlags.push({ field: 'earnings', label: 'No earnings estimates', severity: 'medium' })
+  if (!factorHasData.valuation) stalenessFlags.push({ field: 'valuation', label: 'No valuation data', severity: 'medium' })
+  const dataCompletenessScore = Math.round(dataCompleteness * 100)
+
   return { scores: S, reasons: R, total: parseFloat(adjustedTotal.toFixed(3)), pct, verdict, color, upside,
     mom, avgSent, scoredNews, conviction, uncertainty, factorsAgree: factorsPositive, pe,
     contradictions, inBearRegime, marketRegimeWeak, regimeLabel,
-    isQualityDip, qualityDipLabel, qualityDipBonus }
+    isQualityDip, qualityDipLabel, qualityDipBonus,
+    stalenessFlags, dataCompletenessScore, factorHasData, isETF: false }
 }
 
 export function smartSummary(title, body) {

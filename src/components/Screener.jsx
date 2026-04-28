@@ -312,6 +312,18 @@ export default function Screener({ onNavigateToDive }) {
   const [divSector, setDivSector] = useState('All')
   const [divError, setDivError] = useState(null)
 
+  // Load cached scan results on mount — avoids re-running full scan every page load
+  React.useEffect(() => {
+    try {
+      const cache = JSON.parse(localStorage.getItem('pulse_screener_cache') || 'null')
+      if (cache && cache.results?.length && Date.now() - cache.ts < 3600000) {
+        setResults(cache.results)
+        setRan(true)
+        setMode(cache.mode || 'topN')
+      }
+    } catch {}
+  }, [])
+
   const toggleCat = (cat) => setSelCats(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])
   const toggleAll = () => setSelCats(prev => prev.length === ALL_CATS.length ? [] : [...ALL_CATS])
   const addCustom = () => {
@@ -362,6 +374,7 @@ export default function Screener({ onNavigateToDive }) {
         const dedupedOut = out.filter(r => { if (seenBulk.has(r.ticker)) return false; seenBulk.add(r.ticker); return true })
         dedupedOut.sort((a, b) => b.result.pct - a.result.pct)
         setResults(dedupedOut); setLoading(false); setRan(true)
+        try { localStorage.setItem('pulse_screener_cache', JSON.stringify({ results: dedupedOut, ts: Date.now(), mode, selCats })) } catch {}
         return
       }
     }
@@ -390,6 +403,7 @@ export default function Screener({ onNavigateToDive }) {
     const dedupedCurated = out.filter(r => { if (seenCurated.has(r.ticker)) return false; seenCurated.add(r.ticker); return true })
     dedupedCurated.sort((a, b) => b.result.pct - a.result.pct)
     setResults(dedupedCurated); setLoading(false); setRan(true)
+    try { localStorage.setItem('pulse_screener_cache', JSON.stringify({ results: dedupedCurated, ts: Date.now(), mode, selCats })) } catch {}
   }, [allTickers, selCats, customTickers])
 
   // ── Dividend scan — uses /stable/dividends-calendar (one call, all payers this month) ──
@@ -532,6 +546,26 @@ export default function Screener({ onNavigateToDive }) {
   return (
     <PullToRefresh onRefresh={runScreener} enabled={ran}>
     <div className="page">
+
+      {/* Stale cache banner */}
+      {ran && (() => {
+        try {
+          const cache = JSON.parse(localStorage.getItem('pulse_screener_cache') || 'null')
+          if (!cache) return null
+          const ageMin = Math.round((Date.now() - cache.ts) / 60000)
+          if (ageMin < 5) return null
+          return (
+            <div style={{ background:'rgba(255,215,0,0.06)', border:'1px solid rgba(255,215,0,0.2)', borderRadius:8, padding:'8px 14px', marginBottom:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#FFD700' }}>
+                ⏱ Results from {ageMin < 60 ? `${ageMin}m ago` : `${Math.round(ageMin/60)}h ago`}
+              </div>
+              <button onClick={runScreener} style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#00E5FF', background:'transparent', border:'1px solid rgba(0,229,255,0.3)', borderRadius:5, padding:'3px 8px', cursor:'pointer' }}>
+                Re-scan
+              </button>
+            </div>
+          )
+        } catch { return null }
+      })()}
 
       {/* Mode toggle */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6, marginBottom:16 }}>

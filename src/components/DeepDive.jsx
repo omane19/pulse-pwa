@@ -430,6 +430,42 @@ function ScoreSparkline({ ticker, currentScore }) {
   )
 }
 
+/* ── Data Quality & Staleness Badge ──────────────────────────────────────── */
+function DataQualityBadge({ result }) {
+  if (!result) return null
+  const { stalenessFlags = [], dataCompletenessScore = 100, isETF = false } = result
+  if (stalenessFlags.length === 0 && dataCompletenessScore >= 85) return null
+
+  const highSeverity = stalenessFlags.filter(f => f.severity === 'high')
+  const medSeverity  = stalenessFlags.filter(f => f.severity === 'medium')
+  const borderColor  = highSeverity.length > 0 ? '#FF5000' : '#FFD700'
+  const labelColor   = highSeverity.length > 0 ? '#FF5000' : '#FFD700'
+
+  return (
+    <div style={{ background:`${borderColor}08`, border:`1px solid ${borderColor}30`, borderRadius:10, padding:'10px 14px', marginBottom:12 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: stalenessFlags.length > 0 ? 8 : 0 }}>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', fontWeight:700, color:labelColor, letterSpacing:'1px' }}>
+          {isETF ? '📊 ETF MODE' : '⚠ DATA QUALITY'}
+        </div>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color: dataCompletenessScore >= 80 ? '#00C805' : dataCompletenessScore >= 60 ? '#FFD700' : '#FF5000' }}>
+          {dataCompletenessScore}% data complete
+        </div>
+      </div>
+      {isETF && (
+        <div style={{ fontSize:'0.72rem', color:'#B2B2B2', lineHeight:1.6 }}>
+          Scored on momentum + trend only. Earnings, analyst, and valuation factors excluded — not applicable to ETFs.
+        </div>
+      )}
+      {stalenessFlags.map((f, i) => (
+        <div key={i} style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+          <div style={{ width:5, height:5, borderRadius:'50%', background: f.severity === 'high' ? '#FF5000' : '#FFD700', flexShrink:0 }}/>
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#B2B2B2' }}>{f.label}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function VerdictCard({ result, ticker }) {
   const {pct,verdict,color,conviction,factorsAgree,reasons,scores,mom,uncertainty,marketRegimeWeak,regimeLabel,isQualityDip,qualityDipLabel}=result
   const e={BUY:'●',HOLD:'◆',AVOID:'✕'}[verdict]
@@ -678,6 +714,8 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           </div>
 
           <VerdictCard result={result} ticker={ticker}/>
+
+          <DataQualityBadge result={result}/>
 
           {data.candles && (
             <>

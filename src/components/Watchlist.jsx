@@ -92,6 +92,8 @@ export default function Watchlist({ onNavigateToDive }) {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [sortBy, setSortBy] = useState('score')
+  const [sortBy, setSortBy] = useState('score') // score | verdict | alpha
   const [toast,  setToast]    = useState(null)
   const [alerts, setAlerts]   = useState(loadAlerts)
   const [alertFor, setAlertFor] = useState(null) // ticker being edited
@@ -238,6 +240,22 @@ export default function Watchlist({ onNavigateToDive }) {
 
           {loading && <LoadingBar progress={progress} text={`Scoring watchlist… ${progress}%`} />}
 
+          {/* Sort controls */}
+          {results.length > 1 && (
+            <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+              {[['score','Score ↓'],['verdict','Verdict'],['alpha','A–Z']].map(([v,l]) => (
+                <button key={v} onClick={e => { e.stopPropagation(); setSortBy(v) }}
+                  style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:'0.68rem',
+                    fontFamily:'var(--font-mono)', cursor:'pointer',
+                    background: sortBy===v ? 'rgba(0,229,255,0.1)' : '#111',
+                    border: `1px solid ${sortBy===v ? 'rgba(0,229,255,0.4)' : '#252525'}`,
+                    color: sortBy===v ? '#00E5FF' : '#666' }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Summary stats */}
           {results.length > 0 && (
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:12 }}>
@@ -256,7 +274,13 @@ export default function Watchlist({ onNavigateToDive }) {
           )}
 
           {/* Ticker rows */}
-          {(results.length ? results : list.map(t => ({ ticker:t }))).map((item) => {
+          {(results.length ? [...results].sort((a, b) => {
+              if (!a.result) return 1; if (!b.result) return -1
+              if (sortBy === 'score')   return b.result.pct - a.result.pct
+              if (sortBy === 'verdict') { const o={BUY:0,HOLD:1,AVOID:2}; return (o[a.result.verdict]??2)-(o[b.result.verdict]??2) }
+              if (sortBy === 'alpha')   return a.ticker.localeCompare(b.ticker)
+              return 0
+            }) : list.map(t => ({ ticker:t }))).map((item) => {
             const hasResult = !!item.result
             const r = item.result
             const price = item.quote?.c
@@ -303,6 +327,19 @@ export default function Watchlist({ onNavigateToDive }) {
                       <div style={{ fontSize:'0.62rem', color: r.verdict === 'BUY' ? GREEN : r.verdict === 'HOLD' ? YELLOW : RED, marginTop:3, fontWeight:500 }}>{reason}</div>
                     ) : null
                   })()}
+                  {/* Stale data flags */}
+                  {hasResult && item.result?.stalenessFlags?.length > 0 && (
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:3, marginTop:4 }}>
+                      {item.result.stalenessFlags.slice(0,2).map((f,i) => (
+                        <span key={i} style={{ fontFamily:'var(--font-mono)', fontSize:'0.54rem',
+                          color: f.severity==='high'?'#FF5000':'#888',
+                          background:'rgba(255,255,255,0.04)', border:'1px solid #252525',
+                          borderRadius:3, padding:'1px 4px' }}>
+                          ⚠ {f.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {/* Earnings countdown */}
                   <EarningsCalendarRow ticker={item.ticker} ec={ec} />
                   {hasResult && (
