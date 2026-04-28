@@ -434,7 +434,9 @@ function ScoreSparkline({ ticker, currentScore }) {
 function DataQualityBadge({ result }) {
   if (!result) return null
   const { stalenessFlags = [], dataCompletenessScore = 100, isETF = false } = result
-  if (stalenessFlags.length === 0 && dataCompletenessScore >= 85) return null
+  // Always show badge for ETFs (explains different scoring model)
+  // For stocks, only show if data is incomplete or stale
+  if (!isETF && stalenessFlags.length === 0 && dataCompletenessScore >= 85) return null
 
   const highSeverity = stalenessFlags.filter(f => f.severity === 'high')
   const medSeverity  = stalenessFlags.filter(f => f.severity === 'medium')
