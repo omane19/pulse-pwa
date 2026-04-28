@@ -92,7 +92,6 @@ export default function Watchlist({ onNavigateToDive }) {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [sortBy, setSortBy] = useState('score')
   const [sortBy, setSortBy] = useState('score') // score | verdict | alpha
   const [toast,  setToast]    = useState(null)
   const [alerts, setAlerts]   = useState(loadAlerts)
