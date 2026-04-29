@@ -196,18 +196,20 @@ export async function fetchCandles(ticker, days = 260) {
 ══════════════════════════════════════════ */
 export async function fetchMetrics(ticker) {
   if (hasKeys().fmp) {
-    const [profileArr, ratiosArr, cashFlowArr, incomeArr, balanceArr] = await Promise.all([
+    const [profileArr, ratiosArr, cashFlowArr, incomeArr, balanceArr, keyMetricsArr] = await Promise.all([
       fmp(`/profile?symbol=${ticker}`, 3600000),
       fmp(`/ratios-ttm?symbol=${ticker}`, 3600000),
       fmp(`/cash-flow-statement?symbol=${ticker}&period=annual&limit=2`, 3600000),
       fmp(`/income-statement?symbol=${ticker}&period=annual&limit=2`, 3600000),
       fmp(`/balance-sheet-statement?symbol=${ticker}&period=annual&limit=1`, 3600000),
+      fmp(`/key-metrics-ttm?symbol=${ticker}`, 3600000),
     ])
-    const p   = Array.isArray(profileArr)  ? profileArr[0]  : profileArr
-    const r   = Array.isArray(ratiosArr)   ? ratiosArr[0]   : ratiosArr
-    const cf  = Array.isArray(cashFlowArr) ? cashFlowArr[0] : cashFlowArr
-    const inc = Array.isArray(incomeArr)   ? incomeArr      : []
-    const bs  = Array.isArray(balanceArr)  ? balanceArr[0]  : balanceArr
+    const p   = Array.isArray(profileArr)   ? profileArr[0]  : profileArr
+    const r   = Array.isArray(ratiosArr)    ? ratiosArr[0]   : ratiosArr
+    const km  = Array.isArray(keyMetricsArr)? keyMetricsArr[0]: keyMetricsArr
+    const cf  = Array.isArray(cashFlowArr)  ? cashFlowArr[0] : cashFlowArr
+    const inc = Array.isArray(incomeArr)    ? incomeArr      : []
+    const bs  = Array.isArray(balanceArr)   ? balanceArr[0]  : balanceArr
     if (p?.symbol) {
       // Revenue growth YoY — validate both statements are annual to avoid quarterly mix
       let revenueGrowthYoY = null
@@ -249,9 +251,16 @@ export async function fetchMetrics(ticker) {
         : ((p.lastDividend || p.lastDiv) && p.price ? parseFloat(((p.lastDividend || p.lastDiv) * 4 / p.price * 100).toFixed(2)) : null)
       // Extract additional ratios from ratios-ttm
       const evEbitda       = r?.enterpriseValueMultipleTTM || null
-      const priceToFCF     = r?.priceToFreeCashFlowsRatioTTM || null
-      const roic           = r?.roicTTM ? r.roicTTM * 100 : (r?.returnOnCapitalEmployedTTM ? r.returnOnCapitalEmployedTTM * 100 : null)
-      const incomeQuality  = r?.incomeQualityTTM || null
+      const priceToFCF     = r?.priceToFreeCashFlowRatioTTM || null
+      const roic           = km?.returnOnInvestedCapitalTTM != null
+        ? parseFloat((km.returnOnInvestedCapitalTTM * 100).toFixed(2))
+        : (() => {
+            const ebit = inc[0]?.operatingIncome || null
+            const taxRate = r?.effectiveTaxRateTTM || 0.21
+            const nopat = ebit != null ? ebit * (1 - taxRate) : null
+            const ic = (totalEquity != null && totalDebt != null && totalEquity + totalDebt > 0) ? totalEquity + totalDebt : null
+            return (nopat != null && ic) ? parseFloat((nopat / ic * 100).toFixed(2)) : null
+          })()
       const quickRatio     = r?.quickRatioTTM || null
       const cashRatio      = r?.cashRatioTTM || null
       const grossMargin    = r?.grossProfitMarginTTM ? r.grossProfitMarginTTM * 100 : null
@@ -259,10 +268,17 @@ export async function fetchMetrics(ticker) {
       const netMargin      = r?.netProfitMarginTTM ? r.netProfitMarginTTM * 100 : null
       const assetTurnover  = r?.assetTurnoverTTM || null
 
+      // True TTM values from key-metrics-ttm (all return as decimals, multiply by 100 for %)
+      const roeTTM         = km?.returnOnEquityTTM != null ? parseFloat((km.returnOnEquityTTM * 100).toFixed(2)) : null
+      const roaTTM         = km?.returnOnAssetsTTM != null ? parseFloat((km.returnOnAssetsTTM * 100).toFixed(2)) : null
+      const incomeQuality  = km?.incomeQualityTTM || null
+      const grahamNumber   = km?.grahamNumberTTM ? parseFloat(km.grahamNumberTTM.toFixed(2)) : null
+
       return {
         peTTM:           r?.priceToEarningsRatioTTM || null,
         pbAnnual:        r?.priceToBookRatioTTM || null,
-        roeTTM:          r?.returnOnEquityTTM ? r.returnOnEquityTTM * 100 : null,
+        roeTTM,
+        payoutRatio:     r?.dividendPayoutRatioTTM != null ? parseFloat((r.dividendPayoutRatioTTM * 100).toFixed(1)) : null,
         marketCap:       p.mktCap || null,
         beta:            p.beta || null,
         fcfPerShare,
@@ -275,7 +291,9 @@ export async function fetchMetrics(ticker) {
         evEbitda,
         priceToFCF,
         roic,
+        roaTTM,
         incomeQuality,
+        grahamNumber,
         quickRatio,
         cashRatio,
         grossMargin,
@@ -406,7 +424,24 @@ export async function fetchEarnings(ticker) {
 }
 
 export async function fetchProfile(ticker) {
-  return await fh(`/stock/profile2?symbol=${ticker}`, 3600000) || {}
+  // FMP /profile is already fetched inside fetchMetrics — cache makes this free
+  const d = await fmp(`/profile?symbol=${ticker}`, 3600000)
+  const p = Array.isArray(d) ? d[0] : d
+  if (!p?.symbol) return {}
+  return {
+    name:                  p.companyName || ticker,
+    companyName:           p.companyName || ticker,
+    finnhubIndustry:       p.industry || p.sector || '',   // DeepDive reads finnhubIndustry
+    sector:                p.sector || '',
+    industry:              p.industry || '',
+    marketCapitalization:  p.mktCap || null,  // raw dollars (same as fetchMetrics.marketCap)
+    weburl:                p.website || null,
+    logo:                  p.image || null,
+    exchange:              p.exchangeShortName || null,
+    country:               p.country || null,
+    currency:              p.currency || null,
+    ipo:                   p.ipoDate || null,
+  }
 }
 
 export async function fetchInsider(ticker) {
@@ -434,9 +469,9 @@ export async function fetchMacroLive() {
     fmp(`/economic-calendar?from=${from}&to=${to}`, 1800000),
     fmp(`/sector-performance`, 1800000),
     fmp(`/treasury-rates`, 3600000),
-    fmpv4(`/economic-indicator?name=GDP&limit=4`, 3600000),
-    fmpv4(`/economic-indicator?name=CPI&limit=4`, 3600000),
-    fmpv4(`/economic-indicator?name=unemploymentRate&limit=4`, 3600000),
+    fmp(`/economic-indicators?name=GDP&limit=4`, 3600000),
+    fmp(`/economic-indicators?name=CPI&limit=4`, 3600000),
+    fmp(`/economic-indicators?name=unemploymentRate&limit=4`, 3600000),
   ])
 
   const KEY_EVENTS = ['FOMC','Federal Reserve','CPI','GDP','Nonfarm','Unemployment','PCE','PPI','Retail Sales','ISM']
@@ -472,12 +507,19 @@ export async function fetchMacroLive() {
   } : null
 
   // Economic indicators — latest reading
+  // GDP comes as level in $B — compute QoQ growth rate for display
+  const gdpGrowth = (() => {
+    const cur  = Array.isArray(gdpRaw)  && gdpRaw.length     ? gdpRaw[0].value  : null
+    const prev = Array.isArray(gdpRaw)  && gdpRaw.length >= 2 ? gdpRaw[1].value  : null
+    if (cur == null || !prev) return null
+    return parseFloat(((cur - prev) / Math.abs(prev) * 100).toFixed(2))
+  })()
   const latestVal = (arr) => Array.isArray(arr) && arr.length ? parseFloat(arr[0].value || 0) : null
   const prevVal   = (arr) => Array.isArray(arr) && arr.length >= 2 ? parseFloat(arr[1].value || 0) : null
   const econData = {
-    gdp:        { value: latestVal(gdpRaw),     prev: prevVal(gdpRaw),     label: 'GDP Growth', unit: '%' },
-    cpi:        { value: latestVal(cpiRaw),     prev: prevVal(cpiRaw),     label: 'CPI Inflation', unit: '%' },
-    unemploy:   { value: latestVal(unemployRaw),prev: prevVal(unemployRaw),label: 'Unemployment', unit: '%' },
+    gdp:      { value: gdpGrowth,              prev: null,                  label: 'GDP Growth (QoQ)', unit: '%' },
+    cpi:      { value: latestVal(cpiRaw),      prev: prevVal(cpiRaw),      label: 'CPI Inflation',    unit: '%' },
+    unemploy: { value: latestVal(unemployRaw), prev: prevVal(unemployRaw), label: 'Unemployment',     unit: '%' },
   }
 
   return { events, sectorData, yieldCurve, econData }
@@ -674,52 +716,14 @@ export function computeClusterSignal(insiderData) {
 
 export async function fetchPriceTarget(ticker) {
   return null  // endpoint not available on current FMP plan
-  if (!hasKeys().fmp) return null
-  try {
-    const d = await fmp(`/price-target?symbol=${ticker}`, 3600000)
-    const r = Array.isArray(d) ? d[0] : d
-    if (!r) return null
-    return {
-      target:    r.priceTarget || r.targetPrice || null,
-      consensus: r.targetConsensus || null,
-      high:      r.targetHigh || null,
-      low:       r.targetLow || null,
-      analysts:  r.numberOfAnalysts || null,
-    }
-  } catch { return null }
 }
 
 export async function fetchAnalystEstimates(ticker) {
-  return null  // requires FMP paid plan (402) — disabled
-  if (!hasKeys().fmp) return null
-  try {
-    const d = await fmp(`/analyst-estimates?symbol=${ticker}&period=quarter&limit=4`, 300000)
-    if (!Array.isArray(d) || !d.length) return null
-    return d.map(q => ({
-      date:        q.date,
-      epsAvg:      q.estimatedEpsAverage,
-      epsHigh:     q.estimatedEpsHigh,
-      epsLow:      q.estimatedEpsLow,
-      revAvg:      q.estimatedRevenueAverage,
-      numAnalysts: q.numberAnalystEstimatedEps,
-    }))
-  } catch { return null }
+  return null  // requires FMP paid plan — disabled
 }
 
 export async function fetchUpgradesDowngrades(ticker) {
   return null  // endpoint not available on current FMP plan
-  if (!hasKeys().fmp) return null
-  try {
-    const d = await fmp(`/upgrades-downgrades?symbol=${ticker}&limit=10`, 3600000)
-    if (!Array.isArray(d) || !d.length) return null
-    return d.map(u => ({
-      date:      u.publishedDate?.split('T')[0],
-      company:   u.gradingCompany,
-      action:    u.action, // upgrade | downgrade | initiated | reiterated
-      fromGrade: u.previousGrade,
-      toGrade:   u.newGrade,
-    }))
-  } catch { return null }
 }
 
 // Calculate MACD from closes array (no extra API call needed)
@@ -769,14 +773,14 @@ export async function fetchPeers(ticker) {
 
 export async function fetchTickerLite(ticker) {
   try {
-    const [quote, candles, metrics, rec, earnings, news, score] = await Promise.all([
+    const [quote, candles, metrics, rec, earnings, news, score, rating] = await Promise.all([
       fetchQuote(ticker), fetchCandles(ticker, 260), fetchMetrics(ticker),
       fetchRec(ticker), fetchEarnings(ticker), fetchNews(ticker, 5),
-      fetchScore(ticker)
+      fetchScore(ticker), fetchRating(ticker)
     ])
     if (!quote) return null
     const ea = v => Array.isArray(v) ? v : []
-    return { ticker, quote, candles, metrics: metrics || {}, news: ea(news), rec: rec || {}, earnings: ea(earnings), priceTarget: null, upgrades: [], score: score || null, rating: null }
+    return { ticker, quote, candles, metrics: metrics || {}, news: ea(news), rec: rec || {}, earnings: ea(earnings), priceTarget: null, upgrades: [], score: score || null, rating: rating || null }
   } catch { return null }
 }
 
@@ -863,8 +867,9 @@ export async function fetchSharesFloat(ticker) {
     return {
       floatShares:      r.floatShares || null,
       outstandingShares: r.outstandingShares || null,
-      freeFloat:        r.freeFloat != null ? r.freeFloat * 100 : null,  // convert decimal to percentage
-      source:           r.date || null,
+      freeFloat:        r.freeFloat != null ? parseFloat(r.freeFloat.toFixed(2)) : null,
+      lastUpdated:      r.date || null,
+      source:           r.source || null,
     }
   } catch { return null }
 }
@@ -961,22 +966,22 @@ export async function fetchKeyMetrics(ticker) {
     if (!r) return null
     return {
       evTTM:               r.enterpriseValueTTM || null,
-      revenuePerShareTTM:  r.revenuePerShareTTM || null,
-      netIncomePerShareTTM: r.netIncomePerShareTTM || null,
-      operatingCFPerShareTTM: r.operatingCashFlowPerShareTTM || null,
-      fcfPerShareTTM:      r.freeCashFlowPerShareTTM || null,
-      cashPerShareTTM:     r.cashPerShareTTM || null,
-      debtPerShareTTM:     r.debtPerShareTTM || null,
-      peRatioTTM:          r.peRatioTTM || null,
-      pbRatioTTM:          r.pbRatioTTM || null,
       evEbitdaTTM:         r.evToEBITDATTM || null,
       evSalesTTM:          r.evToSalesTTM || null,
-      roeTTM:              r.roeTTM ? r.roeTTM * 100 : null,
-      roicTTM:             r.roicTTM ? r.roicTTM * 100 : null,
+      evFCFTTM:            r.evToFreeCashFlowTTM || null,
+      evOpCFTTM:           r.evToOperatingCashFlowTTM || null,
+      netDebtToEbitda:     r.netDebtToEBITDATTM || null,
+      roeTTM:              r.returnOnEquityTTM != null ? parseFloat((r.returnOnEquityTTM * 100).toFixed(2)) : null,
+      roicTTM:             r.returnOnInvestedCapitalTTM != null ? parseFloat((r.returnOnInvestedCapitalTTM * 100).toFixed(2)) : null,
+      roaTTM:              r.returnOnAssetsTTM != null ? parseFloat((r.returnOnAssetsTTM * 100).toFixed(2)) : null,
+      roceTTM:             r.returnOnCapitalEmployedTTM != null ? parseFloat((r.returnOnCapitalEmployedTTM * 100).toFixed(2)) : null,
+      incomeQualityTTM:    r.incomeQualityTTM || null,
+      grahamNumber:        r.grahamNumberTTM ? parseFloat(r.grahamNumberTTM.toFixed(2)) : null,
+      earningsYield:       r.earningsYieldTTM ? parseFloat((r.earningsYieldTTM * 100).toFixed(2)) : null,
+      fcfYield:            r.freeCashFlowYieldTTM ? parseFloat((r.freeCashFlowYieldTTM * 100).toFixed(2)) : null,
       workingCapitalTTM:   r.workingCapitalTTM || null,
-      tangibleBVPerShareTTM: r.tangibleBookValuePerShareTTM || null,
-      dividendYieldTTM:    r.dividendYieldTTM ? r.dividendYieldTTM * 100 : null,
-      payoutRatioTTM:      r.payoutRatioTTM ? r.payoutRatioTTM * 100 : null,
+      investedCapitalTTM:  r.investedCapitalTTM || null,
+      capexToRevenue:      r.capexToRevenueTTM ? parseFloat((r.capexToRevenueTTM * 100).toFixed(2)) : null,
     }
   } catch { return null }
 }
@@ -1011,7 +1016,7 @@ export async function fetchCashFlowGrowth(ticker) {
     return d.slice(0, 3).map(r => ({
       date:          r.date || null,
       fcfGrowth:     r.growthFreeCashFlow ? parseFloat((r.growthFreeCashFlow * 100).toFixed(1)) : null,
-      opCFGrowth:    r.growthNetCashProvidedByOperatingActivites ? parseFloat((r.growthNetCashProvidedByOperatingActivites * 100).toFixed(1)) : null,
+      opCFGrowth:    r.growthNetCashProvidedByOperatingActivities ? parseFloat((r.growthNetCashProvidedByOperatingActivities * 100).toFixed(1)) : null,
       capexGrowth:   r.growthCapitalExpenditure ? parseFloat((r.growthCapitalExpenditure * 100).toFixed(1)) : null,
     }))
   } catch { return null }
@@ -1242,7 +1247,7 @@ export async function fetchUnusualFlow(ticker) {
       return {
         type:       (o.callPut || o.optionType || '').toLowerCase().includes('c') ? 'call' : 'put',
         strike:     o.strike || o.strikePrice,
-        expiry:     o.expirtyDate || o.expirationDate || o.expiry,
+        expiry:     o.expirationDate || o.expiry || o.expirtyDate,
         volume:     vol,
         oi,
         ratio,

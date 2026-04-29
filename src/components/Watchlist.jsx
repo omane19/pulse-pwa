@@ -79,7 +79,7 @@ function EarningsCalendarRow({ ticker, ec }) {
   return (
     <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color, marginTop:3, display:'flex', alignItems:'center', gap:4 }}>
       {isClose && '⚡'}
-      Earnings {daysAway === 0 ? 'TODAY' : daysAway === 1 ? 'tomorrow' : `in ${daysAway}d`}
+      Earnings {daysAway === 0 ? 'TODAY' : daysAway === 1 ? 'tomorrow' : daysAway > 0 ? `in ${daysAway}d` : `${Math.abs(daysAway)}d ago`}
       {ec.epsEstimate && ` · EPS est ${ec.epsEstimate > 0 ? '+' : ''}${ec.epsEstimate.toFixed(2)}`}
     </div>
   )
@@ -116,8 +116,8 @@ export default function Watchlist({ onNavigateToDive }) {
       const out = {}
       for (let i = 0; i < list.length; i += BATCH) {
         const batch = list.slice(i, i + BATCH)
-        const results = await Promise.all(batch.map(t => fetchEarningsCalendar(t).then(ec => [t, ec])))
-        results.forEach(([t, ec]) => { if (ec && ec.date) out[t] = ec })
+        const batchEC = await Promise.all(batch.map(t => fetchEarningsCalendar(t).then(ec => [t, ec])))
+        batchEC.forEach(([t, ec]) => { if (ec && ec.date) out[t] = ec })
       }
       setEarnings(out)
     }
@@ -379,7 +379,7 @@ export default function Watchlist({ onNavigateToDive }) {
                 <button
                   className="btn btn-danger"
                   style={{ padding:'6px 10px', width:'auto', fontSize:'0.7rem', flexShrink:0 }}
-                  onClick={e => { e.stopPropagation(); remove(item.ticker) }}>✕</button>
+                  onClick={e => { e.stopPropagation(); remove(item.ticker); setResults(prev => prev.filter(r => r.ticker !== item.ticker)) }}>✕</button>
               </div>
             )
           })}

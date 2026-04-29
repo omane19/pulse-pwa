@@ -107,6 +107,7 @@ function getCacheTTL(path) {
   if (path.includes('/news'))                 return 120
   if (path.includes('/historical-price'))     return 600
   if (path.includes('/economic-calendar'))    return 1800
+  if (path.includes('/economic-indicators'))  return 3600
   if (path.includes('/dividends-calendar'))   return 1800
   if (path.includes('/sector-performance'))   return 1800
   if (path.includes('/treasury'))             return 3600

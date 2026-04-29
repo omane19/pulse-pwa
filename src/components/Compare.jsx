@@ -16,7 +16,7 @@ async function loadOne(ticker) {
   ])
   if (!quote) return null
   const ea = v => Array.isArray(v) ? v : []
-  const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, ea(news), rec||{}, ea(earnings), undefined, { priceTarget: null, upgrades: [] })
+  const result = scoreAsset(quote, candles, candles?.ma50, metrics||{}, ea(news), rec||{}, ea(earnings), undefined, { ticker, priceTarget: null, upgrades: [] })
   // Normalize candles arrays before returning
   if (candles) {
     if (!Array.isArray(candles.closes))    candles = { ...candles, closes: [] }
@@ -181,7 +181,7 @@ export default function Compare() {
               ['3-Month', d=>d.result.mom?.['3m']!=null?`${d.result.mom['3m']>=0?'+':''}${d.result.mom['3m']}%`:'—', d=>d.result.mom?.['3m']>=0?GREEN:RED],
               ['RSI-14', d=>d.result.mom?.rsi??'—', d=>{const r=d.result.mom?.rsi;return r>70?RED:r<30?GREEN:G1}],
               ['P/E (TTM)', d=>d.result.pe?`${d.result.pe.toFixed(1)}×`:'—', d=>d.result.pe&&d.result.pe<20?GREEN:d.result.pe>35?RED:YELLOW],
-              ['FMP Rating', d=>d.data?.rating?.rating||'—', d=>d.data?.rating?.ratingScore>=25?GREEN:d.data?.rating?.ratingScore>=15?YELLOW:RED],
+              ['FMP Rating', d=>d.data?.rating?.rating||'—', d=>!d.data?.rating?.rating?null:d.data?.rating?.ratingScore>=25?GREEN:d.data?.rating?.ratingScore>=15?YELLOW:RED],
               ['Piotroski', d=>d.data?.score?.piotroski!=null?`${d.data.score.piotroski}/9`:'—', d=>d.data?.score?.piotroski>=7?GREEN:d.data?.score?.piotroski>=4?YELLOW:RED],
               ['Altman Z', d=>d.data?.score?.altmanZ!=null?d.data.score.altmanZ.toFixed(2):'—', d=>d.data?.score?.altmanZ>=3?GREEN:d.data?.score?.altmanZ>=1.8?YELLOW:RED],
               ['DCF Value', d=>d.data?.dcf?.dcf?`$${d.data.dcf.dcf}`:'—', d=>d.data?.dcf?.upside>10?GREEN:d.data?.dcf?.upside<-10?RED:YELLOW],
@@ -197,16 +197,17 @@ export default function Compare() {
               ['200-Day MA', d=>d.candles?.ma200?`$${d.candles.ma200}`:'—', d=>d.quote?.c>d.candles?.ma200?GREEN:RED],
               ['Mkt Cap', d=>fmtMcap(d.profile?.marketCapitalization), null],
               ['Signal', d=>`${d.result.pct.toFixed(0)}/100`, d=>d.result.color],
-            ].map(([l,fn,col],i)=>(
-              <div key={l} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', padding:'9px 14px', borderBottom:i<8?`1px solid ${G4}`:'none', alignItems:'center' }}>
+            ].map(([l,fn,col],i,rows)=>(
+              <div key={l} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', padding:'9px 14px', borderBottom:i<rows.length-1?`1px solid ${G4}`:'none', alignItems:'center' }}>
                 <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:G1 }}>{l}</div>
                 {[a,b].map((d,j)=>{
                   const v=fn(d); const c=col?col(d):G1
-                  // Determine winner for numeric metrics
+                  // Skip winner logic for string-formatted metrics where magnitudes aren't comparable
+                  const noWinner=['Mkt Cap','Signal','FMP Rating'].includes(l)
                   const va=fn(a); const vb=fn(b)
                   const numA=parseFloat(String(va).replace(/[^\d.-]/g,''))
                   const numB=parseFloat(String(vb).replace(/[^\d.-]/g,''))
-                  const hasWinner=!isNaN(numA)&&!isNaN(numB)&&numA!==numB&&va!=='—'&&vb!=='—'
+                  const hasWinner=!noWinner&&!isNaN(numA)&&!isNaN(numB)&&numA!==numB&&va!=='—'&&vb!=='—'
                   // For most metrics higher=better, except P/E, EV/EBITDA, PEG (lower=better)
                   const lowerBetter=['P/E (TTM)','EV/EBITDA','PEG Ratio'].includes(l)
                   const isWinner=hasWinner&&(lowerBetter?(j===0?numA<numB:numB<numA):(j===0?numA>numB:numB>numA))

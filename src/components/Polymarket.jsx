@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useWatchlist } from '../hooks/useWatchlist.js'
+import { TICKER_NAMES } from '../utils/constants.js'
 
 /* ══════════════════════════════════════════════════════════════════════════════
    POLYMARKET TAB — Market Prediction Intelligence
@@ -23,9 +24,16 @@ const DAYS_URGENT = 7
 const DAYS_NEAR = 30
 const HOT_MOVE_THRESHOLD = 0.15  // 15 point swing = hot
 
+/* ── Parse outcomePrices — Gamma API returns a JSON string, not an array ── */
+function parseOutcomePrices(outcomePrices) {
+  if (!outcomePrices) return []
+  if (Array.isArray(outcomePrices)) return outcomePrices.map(Number)
+  try { return JSON.parse(outcomePrices).map(Number) } catch { return [] }
+}
+
 /* ── Market Quality Scoring ────────────────────────────────────────────────── */
 function getMarketQuality(market) {
-  const volume = parseFloat(market.volume || 0)
+  const volume = market.volumeNum ?? 0
   const daysLeft = Math.floor((new Date(market.endDate) - Date.now()) / 86400000)
   
   if (volume >= VOLUME_HIGH && daysLeft <= DAYS_NEAR) return { tier: 'high', label: '🟢 High Confidence', color: '#00C805' }
@@ -36,9 +44,10 @@ function getMarketQuality(market) {
 
 /* ── Hot Event Detection ──────────────────────────────────────────────────── */
 function calculateHotScore(market, priceHistory) {
-  const volume = parseFloat(market.volume || 0)
-  const currentPrice = parseFloat(market.outcomePrices?.[0] || 0.5)
-  const price24h = priceHistory[market.id]?.price || currentPrice
+  const volume = market.volumeNum ?? 0
+  const prices = parseOutcomePrices(market.outcomePrices)
+  const currentPrice = prices[0] ?? 0.5
+  const price24h = priceHistory[market.id]?.price ?? currentPrice
   const priceChange = Math.abs(currentPrice - price24h)
   const daysLeft = Math.floor((new Date(market.endDate) - Date.now()) / 86400000)
   const urgencyBoost = daysLeft <= DAYS_URGENT ? 2 : 1
@@ -50,16 +59,24 @@ function calculateHotScore(market, priceHistory) {
 function isRelevantToWatchlist(market, watchlistTickers) {
   const question = (market.question || '').toUpperCase()
   return watchlistTickers.some(ticker => {
-    // Match exact ticker or company name patterns
-    return question.includes(ticker) || 
-           question.includes(ticker.replace(/[0-9]/g, '')) // handle tickers with numbers
+    if (question.includes(ticker)) return true
+    // Strip hyphens/numbers from tickers like BRK-B
+    const stripped = ticker.replace(/[0-9-]/g, '')
+    if (stripped.length > 1 && question.includes(stripped)) return true
+    // Match first significant word of company name (Apple, Microsoft, Tesla, etc.)
+    const company = (TICKER_NAMES[ticker] || '').toUpperCase()
+    if (company) {
+      const words = company.split(/\s+/)
+      return words.some(w => w.length > 3 && question.includes(w))
+    }
+    return false
   })
 }
 
 /* ── Don't Miss Criteria ───────────────────────────────────────────────────── */
 function isDontMiss(market, watchlistTickers) {
   const daysLeft = Math.floor((new Date(market.endDate) - Date.now()) / 86400000)
-  const volume = parseFloat(market.volume || 0)
+  const volume = market.volumeNum ?? 0
   const relevant = isRelevantToWatchlist(market, watchlistTickers)
   const highImpact = (market.question || '').toLowerCase().match(/earnings|beat|guidance|launch|approval|announce/)
   
@@ -91,7 +108,7 @@ export default function Polymarket() {
   const [priceHistory, setPriceHistory] = useState({})
   const [filter, setFilter] = useState('all') // all | watchlist | macro | sector
 
-  // Load price history from localStorage
+  // Load price history from localStorage on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem('polymarket_price_history')
@@ -106,46 +123,46 @@ export default function Polymarket() {
     try {
       const response = await fetch(`${GAMMA_API}/markets?active=true&closed=false&limit=100`)
       if (!response.ok) throw new Error(`Polymarket API error: ${response.status}`)
-      
+
       const data = await response.json()
       const filtered = (data || []).filter(m => {
         const quality = getMarketQuality(m)
         return quality !== null  // only show markets that pass quality threshold
       })
-      
+
       setMarkets(filtered)
-      
-      // Store current prices for 24h tracking
-      const newHistory = {}
-      filtered.forEach(m => {
-        newHistory[m.id] = {
-          price: parseFloat(m.outcomePrices?.[0] || 0.5),
-          timestamp: Date.now()
-        }
+
+      // Store current prices for 24h baseline tracking
+      // Use functional update to always merge against latest history, not stale closure
+      setPriceHistory(prev => {
+        const merged = { ...prev }
+        filtered.forEach(m => {
+          const prices = parseOutcomePrices(m.outcomePrices)
+          const currentPrice = prices[0] ?? 0.5
+          // Only set baseline if new market or existing baseline is >24h old
+          if (!merged[m.id] || Date.now() - merged[m.id].timestamp > 86400000) {
+            merged[m.id] = { price: currentPrice, timestamp: Date.now() }
+          }
+        })
+        try { localStorage.setItem('polymarket_price_history', JSON.stringify(merged)) } catch {}
+        return merged
       })
-      
-      // Merge with existing history (keep old prices for comparison)
-      const merged = { ...priceHistory }
-      Object.keys(newHistory).forEach(id => {
-        if (!merged[id] || Date.now() - merged[id].timestamp > 86400000) {
-          merged[id] = newHistory[id]  // update if >24h old or new
-        }
-      })
-      
-      setPriceHistory(merged)
-      localStorage.setItem('polymarket_price_history', JSON.stringify(merged))
-      
+
     } catch (err) {
       setError(err.message)
       console.error('[Polymarket] Fetch error:', err)
     } finally {
       setLoading(false)
     }
-  }, [priceHistory])
+  }, [])
+
+  // Use a ref so the interval always calls the latest fetchMarkets without restarting
+  const fetchMarketsRef = useRef(fetchMarkets)
+  fetchMarketsRef.current = fetchMarkets
 
   useEffect(() => {
-    fetchMarkets()
-    const interval = setInterval(fetchMarkets, 300000) // refresh every 5 min
+    fetchMarketsRef.current()
+    const interval = setInterval(() => fetchMarketsRef.current(), 300000) // refresh every 5 min
     return () => clearInterval(interval)
   }, [])
 
@@ -166,24 +183,24 @@ export default function Polymarket() {
 
   const macroMarkets = markets
     .filter(isMacroMarket)
-    .sort((a, b) => parseFloat(b.volume || 0) - parseFloat(a.volume || 0))
+    .sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
     .slice(0, 6)
 
   const sectorMarkets = markets
     .filter(isSectorMarket)
-    .sort((a, b) => parseFloat(b.volume || 0) - parseFloat(a.volume || 0))
+    .sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
     .slice(0, 6)
 
   const watchlistMarkets = markets
     .filter(m => isRelevantToWatchlist(m, watchlistTickers))
-    .sort((a, b) => parseFloat(b.volume || 0) - parseFloat(a.volume || 0))
+    .sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
 
-  // Active filter
-  const displayMarkets = 
+  // Active filter — use spread to avoid mutating markets state array
+  const displayMarkets =
     filter === 'watchlist' ? watchlistMarkets :
     filter === 'macro' ? macroMarkets :
     filter === 'sector' ? sectorMarkets :
-    markets.sort((a, b) => parseFloat(b.volume || 0) - parseFloat(a.volume || 0)).slice(0, 20)
+    [...markets].sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0)).slice(0, 20)
 
   if (loading && markets.length === 0) {
     return (
@@ -309,10 +326,10 @@ function Section({ title, subtitle, children }) {
 
 /* ── Market Card Component ─────────────────────────────────────────────────── */
 function MarketCard({ market, priceHistory, showHotBadge, showUrgent }) {
-  const yesPrice = parseFloat(market.outcomePrices?.[0] || 0.5)
-  const noPrice = parseFloat(market.outcomePrices?.[1] || 0.5)
+  const prices = parseOutcomePrices(market.outcomePrices)
+  const yesPrice = prices[0] ?? 0.5
   const probability = Math.round(yesPrice * 100)
-  const volume = parseFloat(market.volume || 0)
+  const volume = market.volumeNum ?? 0
   const endDate = new Date(market.endDate)
   const daysLeft = Math.floor((endDate - Date.now()) / 86400000)
   const quality = getMarketQuality(market)

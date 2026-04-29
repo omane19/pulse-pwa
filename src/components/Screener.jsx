@@ -94,14 +94,14 @@ function RankCard({ item, rank, showCat = true, onNavigate }) {
           {(() => {
             const mt = item.metrics || {}
             const metrics = [
-              mt.peRatio && ['P/E', mt.peRatio.toFixed(1) + '×'],
-              mt.pegRatio && ['PEG', mt.pegRatio.toFixed(2)],
+              mt.peTTM     && ['P/E', mt.peTTM.toFixed(1) + '×'],
+              mt.pegRatio  && ['PEG', mt.pegRatio.toFixed(2)],
               mt.evEbitda  && ['EV/EBITDA', mt.evEbitda.toFixed(1) + '×'],
-              mt.roe       && ['ROE', mt.roe.toFixed(1) + '%'],
+              mt.roeTTM    && ['ROE', mt.roeTTM.toFixed(1) + '%'],
               mt.roic      && ['ROIC', mt.roic.toFixed(1) + '%'],
               mt.grossMargin && ['Gross Margin', mt.grossMargin.toFixed(1) + '%'],
               mt.netMargin && ['Net Margin', mt.netMargin.toFixed(1) + '%'],
-              mt.debtEquity && ['Debt/Eq', mt.debtEquity.toFixed(2)],
+              mt.debtToEquity != null && ['Debt/Eq', mt.debtToEquity.toFixed(2)],
               mt.currentRatio && ['Current', mt.currentRatio.toFixed(2)],
             ].filter(Boolean)
             if (!metrics.length) return null
@@ -443,7 +443,7 @@ export default function Screener({ onNavigateToDive }) {
           const annualPayout = s.dividend
             ? parseFloat((s.dividend * (s.frequency === 'Monthly' ? 12 : s.frequency === 'Semi-Annual' ? 2 : 4)).toFixed(2))
             : price && divYield ? parseFloat((price * divYield / 100).toFixed(2)) : null
-          const payoutRatio = metrics.payoutRatio ?? null
+          const payoutRatio = metrics.payoutRatio ?? null  // from fetchMetrics dividendPayoutRatioTTM
           let signal = null, signalColor = '#B2B2B2', verdict = null
           if (data?.quote && data?.candles) {
             const ea = v => Array.isArray(v) ? v : []
@@ -459,7 +459,7 @@ export default function Screener({ onNavigateToDive }) {
             price, chg, divYield, annualPayout, payoutRatio,
             exDivDate: s.exDivDate,
             paymentDate: s.paymentDate,
-            pe: metrics.peRatio || s.pe || null,
+            pe: metrics.peTTM || s.pe || null,
             mcap: fmtMcap(data?.profile?.marketCapitalization || s.mcap),
             signal, signalColor, verdict,
             frequency: s.frequency || 'Quarterly',

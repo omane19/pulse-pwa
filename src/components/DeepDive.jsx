@@ -764,61 +764,23 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
             <MetricCell label="Quick Ratio" value={data.metrics?.quickRatio!=null?`${data.metrics.quickRatio.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.quickRatio>=1?'pos':data.metrics?.quickRatio<0.5?'neg':'neu'}/>
             <MetricCell label="Cash Ratio" value={data.metrics?.cashRatio!=null?`${data.metrics.cashRatio.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.cashRatio>=0.5?'pos':'neu'}/>
             <MetricCell label="Asset Turn" value={data.metrics?.assetTurnover!=null?`${data.metrics.assetTurnover.toFixed(2)}×`:'N/A'}/>
-            <MetricCell label="Short Float" value={data.sharesFloat?.freeFloat!=null?`${data.sharesFloat.freeFloat.toFixed(1)}%`:'N/A'}/>
+            <MetricCell label="Free Float" value={data.sharesFloat?.freeFloat!=null?`${data.sharesFloat.freeFloat.toFixed(1)}%`:'N/A'}/>
           </div>
 
-          {/* ── Short Squeeze Meter ── */}
-          {(() => {
-            const _dc = data?.candles
-            const sf = data?.sharesFloat
-            const avgVol = Array.isArray(_dc?.volumes) && _dc.volumes.length >= 20
-              ? (_dc.volumes.slice(-20).reduce((a,b) => a+b, 0) / 20) : null
-            const floatShares = sf?.floatShares ?? null
-            const shortFloatPct = sf?.freeFloat ?? null
-            // shortFloatPct is now percentage (e.g. 0.85), divide by 100 to get decimal for calculation
-            const shortShares = (shortFloatPct != null && floatShares != null)
-              ? (shortFloatPct / 100) * floatShares : null
-            const daysToCover = (shortShares != null && avgVol != null && avgVol > 0)
-              ? shortShares / avgVol : null
-            if (shortFloatPct == null) return null
-
-            let sqScore = 0
-            const sqReasons = []
-            if (shortFloatPct >= 30)      { sqScore += 45; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — extreme`) }
-            else if (shortFloatPct >= 20) { sqScore += 35; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — very high`) }
-            else if (shortFloatPct >= 10) { sqScore += 20; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — elevated`) }
-            else if (shortFloatPct >= 5)  { sqScore += 10; sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — moderate`) }
-            else                          { sqReasons.push(`${shortFloatPct.toFixed(1)}% short float — low`) }
-
-            if (daysToCover != null) {
-              if (daysToCover >= 10)     { sqScore += 40; sqReasons.push(`${daysToCover.toFixed(1)} days to cover — critical`) }
-              else if (daysToCover >= 5) { sqScore += 25; sqReasons.push(`${daysToCover.toFixed(1)} days to cover — high`) }
-              else if (daysToCover >= 2) { sqScore += 10; sqReasons.push(`${daysToCover.toFixed(1)} days to cover — moderate`) }
-              else                       { sqReasons.push(`${daysToCover.toFixed(1)} days to cover — low`) }
-            }
-            const mom1m = Array.isArray(_dc?.closes) && _dc.closes.length >= 21 && price
-              ? (price / _dc.closes[_dc.closes.length - 21] - 1) * 100 : null
-            if (mom1m != null && mom1m >= 20) { sqScore += 15; sqReasons.push(`+${mom1m.toFixed(0)}% 1-month — potential squeeze in progress`) }
-            sqScore = Math.min(100, sqScore)
-            const sqLabel = sqScore >= 70 ? 'HIGH RISK' : sqScore >= 40 ? 'MODERATE' : 'LOW'
-            const sqColor = sqScore >= 70 ? '#FF5000' : sqScore >= 40 ? '#FFD700' : '#00C805'
+          {/* ── Float Profile ── */}
+          {data?.sharesFloat && (data.sharesFloat.floatShares != null || data.sharesFloat.freeFloat != null) && (() => {
+            const sf = data.sharesFloat
+            const lowFloat = sf.freeFloat != null && sf.freeFloat < 10
             return (
-              <div style={{ background:'#111', border:'1px solid #252525', borderLeft:`3px solid ${sqColor}`, borderRadius:12, padding:'14px 16px', marginBottom:14 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                  <div>
-                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#B2B2B2', letterSpacing:1.5, textTransform:'uppercase', marginBottom:2 }}>🔥 Short Squeeze Meter</div>
-                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color:sqColor, fontWeight:700 }}>{sqLabel}</div>
-                  </div>
-                  <div style={{ fontFamily:'var(--font-display)', fontSize:'1.6rem', fontWeight:800, color:sqColor }}>{sqScore}</div>
+              <div style={{ background:'#111', border:'1px solid #252525', borderRadius:12, padding:'14px 16px', marginBottom:14 }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#B2B2B2', letterSpacing:1.5, textTransform:'uppercase', marginBottom:10 }}>
+                  Float Profile
                 </div>
-                <div style={{ height:6, background:'#222', borderRadius:3, overflow:'hidden', marginBottom:10 }}>
-                  <div style={{ height:'100%', width:`${sqScore}%`, background:sqColor, borderRadius:3, transition:'width 0.6s ease' }} />
-                </div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:8 }}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
                   {[
-                    ['Short Float', shortFloatPct != null ? `${shortFloatPct.toFixed(1)}%` : 'N/A'],
-                    ['Days to Cover', daysToCover != null ? daysToCover.toFixed(1) : 'N/A'],
-                    ['Float Shares', floatShares != null ? (floatShares/1e6).toFixed(1)+'M' : 'N/A'],
+                    ['Float Shares', sf.floatShares != null ? `${(sf.floatShares/1e6).toFixed(1)}M` : 'N/A'],
+                    ['Free Float', sf.freeFloat != null ? `${sf.freeFloat.toFixed(1)}%` : 'N/A'],
+                    ['Outstanding', sf.outstandingShares != null ? `${(sf.outstandingShares/1e6).toFixed(1)}M` : 'N/A'],
                   ].map(([l,v]) => (
                     <div key={l} style={{ background:'rgba(255,255,255,0.03)', borderRadius:8, padding:'7px 10px', textAlign:'center' }}>
                       <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#B2B2B2', marginBottom:2 }}>{l}</div>
@@ -826,12 +788,16 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                     </div>
                   ))}
                 </div>
-                {sqReasons.map((r, i) => (
-                  <div key={i} style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#B2B2B2', padding:'2px 0' }}>· {r}</div>
-                ))}
-                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#444', marginTop:8 }}>
-                  Score: short float % + days-to-cover + momentum. Not financial advice.
-                </div>
+                {lowFloat && (
+                  <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#FFD700', marginTop:8 }}>
+                    ⚠ Low free float ({sf.freeFloat.toFixed(1)}%) — heightened price volatility potential
+                  </div>
+                )}
+                {sf.lastUpdated && (
+                  <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#444', marginTop:6 }}>
+                    Updated {sf.lastUpdated}
+                  </div>
+                )}
               </div>
             )
           })()}
