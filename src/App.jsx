@@ -10,6 +10,7 @@ import Learn from './components/Learn.jsx'
 import SmartMoney from './components/SmartMoney.jsx'
 import TrackRecord from './components/TrackRecord.jsx'
 import Portfolio from './components/Portfolio.jsx'
+import Polymarket from './components/Polymarket.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 
