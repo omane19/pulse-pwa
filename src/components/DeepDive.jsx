@@ -142,7 +142,7 @@ function AnalystHistory({ rec, price, avTarget }) {
           )}
           {current.period && (() => {
             const sb=current.strongBuy||0, b=current.buy||0, h=current.hold||0, s=current.sell||0, ss=current.strongSell||0, tot=sb+b+h+s+ss
-            const bullPct = tot > 0 ? Math.round((sb + b*0.5) / tot * 100) : 0
+            const bullPct = tot > 0 ? Math.round((sb + b) / tot * 100) : 0
             return (
               <div style={{ background:'#111', border:'1px solid #252525', borderRadius:12, padding:'14px', textAlign:'center' }}>
                 <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#B2B2B2', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Analyst Sentiment</div>
@@ -286,7 +286,7 @@ function AnalysisBrief({ ticker, company, sector, price, result, ma50, metrics, 
   const h = recData.hold || 0; const s = recData.sell || 0; const ss2 = recData.strongSell || 0
   const tot = sb + b + h + s + ss2
   if (tot > 0) {
-    const bullPct = Math.round((sb + b * 0.5) / tot * 100)
+    const bullPct = tot > 0 ? Math.round((sb + b) / tot * 100) : 0
     if (bullPct >= 75) analystSentence = ` Wall Street is broadly bullish — ${bullPct}% of analysts rate it a buy.`
     else if (bullPct >= 50) analystSentence = ` Analyst sentiment is moderately positive at ${bullPct}% bullish.`
     else analystSentence = ` Analyst sentiment is mixed at ${bullPct}% bullish.`
@@ -697,7 +697,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
             <div className="price-company">
               {data.profile?.name||TICKER_NAMES[ticker]||ticker}
               {data.profile?.finnhubIndustry&&` · ${data.profile.finnhubIndustry}`}
-              {data.profile?.marketCapitalization&&` · ${fmtMcap(data.profile.marketCapitalization * 1e6)}`}
+              {data.profile?.marketCapitalization&&` · ${fmtMcap(data.profile.marketCapitalization)}`}
             </div>
             <div className="price-big" style={{color}}>${price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
             <div className={`price-change ${chg>=0?'pos':'neg'}`}>{chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}% today</div>
@@ -775,6 +775,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               ? (_dc.volumes.slice(-20).reduce((a,b) => a+b, 0) / 20) : null
             const floatShares = sf?.floatShares ?? null
             const shortFloatPct = sf?.freeFloat ?? null
+            // shortFloatPct is now percentage (e.g. 0.85), divide by 100 to get decimal for calculation
             const shortShares = (shortFloatPct != null && floatShares != null)
               ? (shortFloatPct / 100) * floatShares : null
             const daysToCover = (shortShares != null && avgVol != null && avgVol > 0)
@@ -1019,7 +1020,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                 </div>
               </div>
               <div style={{fontSize:'0.72rem',color:'#B2B2B2'}}>
-                Current price ${data.dcf.price} · DCF ${data.dcf.dcf} · {data.dcf.upside>10?'Significant margin of safety':'Priced near intrinsic value'}
+                Current price ${data.quote?.c?.toFixed(2) || data.dcf.price || 'N/A'} · DCF ${data.dcf.dcf} · {data.dcf.upside>10?'Significant margin of safety':'Priced near intrinsic value'}
               </div>
             </div></>
           )}

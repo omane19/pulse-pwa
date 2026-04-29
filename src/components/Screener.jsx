@@ -434,7 +434,13 @@ export default function Screener({ onNavigateToDive }) {
           const price = data?.quote?.c || s.price || 0
           const chg = data?.quote?.dp || 0
           const metrics = data?.metrics || {}
-          const divYield = s.divYield
+          const price = data?.quote?.c || s.price || 0
+        // Skip penny stocks (unreliable data, inflated yields)
+        if (price < 5) return null
+        // FMP sometimes returns yield in wrong units - if > 50%, likely needs /100
+        const divYield = s.divYield && s.divYield > 50 ? s.divYield / 100 : s.divYield
+        // Skip if yield is still unrealistic after correction
+        if (!divYield || divYield > 25) return null
           const annualPayout = s.dividend
             ? parseFloat((s.dividend * (s.frequency === 'Monthly' ? 12 : s.frequency === 'Semi-Annual' ? 2 : 4)).toFixed(2))
             : price && divYield ? parseFloat((price * divYield / 100).toFixed(2)) : null

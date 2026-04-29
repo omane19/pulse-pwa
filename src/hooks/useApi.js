@@ -636,10 +636,7 @@ export async function fetchFMPRecentCongress() {
     fmp(`/house-latest?page=0&limit=50`, 120000),
   ])
   const all = [...(Array.isArray(senate) ? senate : []), ...(Array.isArray(house) ? house : [])]
-  return all.filter(t => {
-    const type = (t.type || t.transactionType || '').toLowerCase()
-    return type.includes('purchase') || type.includes('buy')
-  }).slice(0, 50).map(t => {
+  return all.slice(0, 50).map(t => {
     // FMP field name variations: ticker, symbol, asset, assetDescription
     const rawTicker = t.ticker || t.symbol || t.asset || ''
     // Extract ticker from asset description like "Apple Inc (AAPL)" or plain "AAPL"
@@ -652,7 +649,10 @@ export async function fetchFMPRecentCongress() {
       type:   t.type || t.transactionType || '?',
       amount: t.amount || '?',
       date:   t.transactionDate || t.disclosureDate || '?',
-      isBuy:  true,
+      isBuy:  (() => {
+        const type = (t.type || t.transactionType || '').toLowerCase()
+        return type.includes('purchase') || type.includes('buy')
+      })(),
     }
   })
 }
@@ -863,7 +863,7 @@ export async function fetchSharesFloat(ticker) {
     return {
       floatShares:      r.floatShares || null,
       outstandingShares: r.outstandingShares || null,
-      freeFloat:        r.freeFloat || null,  // percentage
+      freeFloat:        r.freeFloat != null ? r.freeFloat * 100 : null,  // convert decimal to percentage
       source:           r.date || null,
     }
   } catch { return null }
