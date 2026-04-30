@@ -593,7 +593,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   // Re-score whenever base data or smart money updates
   useEffect(() => {
     if (!data) return
-    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, Array.isArray(data.news)?data.news:[], data.rec, Array.isArray(data.earnings)?data.earnings:[], smartMoney || undefined, { ticker, priceTarget: data.priceTarget, upgrades: Array.isArray(data.upgrades)?data.upgrades:[], macd: data.macd || null, regimeData: data.regimeData || null })
+    const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, Array.isArray(data.news)?data.news:[], data.rec, Array.isArray(data.earnings)?data.earnings:[], smartMoney || undefined, { ticker, companyName: data.profile?.name || '', priceTarget: data.priceTarget, upgrades: Array.isArray(data.upgrades)?data.upgrades:[], macd: data.macd || null, regimeData: data.regimeData || null })
     setResult(r)
   }, [data, smartMoney])
 

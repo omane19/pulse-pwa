@@ -213,13 +213,14 @@ export default function Polymarket() {
     return (
       <div style={{ padding: '40px 20px', textAlign: 'center' }}>
         <div style={{ color: '#FF5000', marginBottom: 8 }}>⚠️ Failed to load Polymarket data</div>
-        <div style={{ color: '#666', fontSize: '0.72rem' }}>{error}</div>
+        <div style={{ color: '#666', fontSize: '0.72rem', marginBottom: 4 }}>{error}</div>
+        <div style={{ color: '#444', fontSize: '0.66rem', marginBottom: 16 }}>Check your connection or try again</div>
         <button onClick={fetchMarkets} style={{
-          marginTop: 16, padding: '8px 16px', background: 'rgba(0,229,255,0.1)', 
-          border: '1px solid rgba(0,229,255,0.3)', borderRadius: 8, color: '#00E5FF', 
-          cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.7rem'
+          padding: '10px 24px', background: 'rgba(0,229,255,0.1)',
+          border: '1px solid rgba(0,229,255,0.3)', borderRadius: 8, color: '#00E5FF',
+          cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.72rem'
         }}>
-          Retry
+          ↻ Refresh Markets
         </button>
       </div>
     )
@@ -228,13 +229,23 @@ export default function Polymarket() {
   return (
     <div style={{ padding: '16px 12px 80px' }}>
       {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 900, color: '#E8E8E8', marginBottom: 4 }}>
-          Market Predictions
-        </h1>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: '#888', letterSpacing: 0.5 }}>
-          Real-time probabilities from Polymarket prediction markets
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 900, color: '#E8E8E8', marginBottom: 4 }}>
+            Market Predictions
+          </h1>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: '#888', letterSpacing: 0.5 }}>
+            Real-time probabilities from Polymarket prediction markets
+          </div>
         </div>
+        <button onClick={fetchMarkets} disabled={loading} style={{
+          padding: '6px 12px', background: 'rgba(0,229,255,0.08)',
+          border: '1px solid rgba(0,229,255,0.25)', borderRadius: 8, color: loading ? '#444' : '#00E5FF',
+          cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)',
+          fontSize: '0.66rem', flexShrink: 0, marginTop: 4
+        }}>
+          {loading ? '…' : '↻'}
+        </button>
       </div>
 
       {/* Hot Events */}

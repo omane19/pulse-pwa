@@ -193,7 +193,8 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   // ETF routing — ETFs use a simplified momentum+trend model
   // Running the stock model on ETFs produces structurally biased scores (no P/E, no earnings, no analysts)
   const _tickerUpper = (extras?.ticker || '').toUpperCase()
-  if (isETF(_tickerUpper)) {
+  const _companyName = extras?.companyName || ''
+  if (isETF(_tickerUpper) || /\betf\b/i.test(_companyName)) {
     return scoreETF(quote, candles, ma50, extras)
   }
 
