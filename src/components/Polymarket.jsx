@@ -13,8 +13,7 @@ import { TICKER_NAMES } from '../utils/constants.js'
    - 24h price tracking via localStorage
 ══════════════════════════════════════════════════════════════════════════════ */
 
-const GAMMA_API = 'https://gamma-api.polymarket.com'
-const CLOB_API = 'https://clob.polymarket.com'
+const GAMMA_API = '/api/proxy?provider=polymarket&path='
 
 // Quality thresholds
 const VOLUME_HIGH = 5_000_000
@@ -121,7 +120,7 @@ export default function Polymarket() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`${GAMMA_API}/markets?active=true&closed=false&limit=100`)
+      const response = await fetch(`${GAMMA_API}/markets%3Factive%3Dtrue%26closed%3Dfalse%26limit%3D100`)
       if (!response.ok) throw new Error(`Polymarket API error: ${response.status}`)
 
       const data = await response.json()

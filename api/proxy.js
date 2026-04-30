@@ -5,7 +5,7 @@
  * This function appends the real API key and forwards the request.
  */
 
-const ALLOWED_PROVIDERS = ['fmp', 'fmp_v3', 'fmp_v4', 'finnhub', 'av', 'polygon']
+const ALLOWED_PROVIDERS = ['fmp', 'fmp_v3', 'fmp_v4', 'finnhub', 'av', 'polygon', 'polymarket']
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -73,6 +73,10 @@ export default async function handler(req, res) {
       // Polygon uses apiKey query param
       const sep = apiPath.includes('?') ? '&' : '?'
       url = `https://api.polygon.io${apiPath}${sep}apiKey=${key}`
+
+    } else if (provider === 'polymarket') {
+      // Public API — no key required, proxy to bypass browser CORS restriction
+      url = `https://gamma-api.polymarket.com${apiPath}`
     }
 
     const upstream = await fetch(url, {
