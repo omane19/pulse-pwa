@@ -3,14 +3,11 @@ import { marketStatus } from './utils/scoring.js'
 import DeepDive from './components/DeepDive.jsx'
 import Watchlist from './components/Watchlist.jsx'
 import Screener from './components/Screener.jsx'
-import GlobalImpact from './components/GlobalImpact.jsx'
-import Options from './components/Options.jsx'
-import Compare from './components/Compare.jsx'
+import Flow from './components/Flow.jsx'
+import Macro from './components/Macro.jsx'
 import Learn from './components/Learn.jsx'
-import SmartMoney from './components/SmartMoney.jsx'
 import TrackRecord from './components/TrackRecord.jsx'
 import Portfolio from './components/Portfolio.jsx'
-import Polymarket from './components/Polymarket.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 
@@ -24,20 +21,11 @@ function IconWatch({ active }) {
 function IconScreen({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>)
 }
-function IconOptions({ active }) {
+function IconFlow({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>)
 }
-function IconCompare({ active }) {
-  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>)
-}
-function IconGlobal({ active }) {
+function IconMacro({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>)
-}
-function IconLearn({ active }) {
-  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>)
-}
-function IconMoney({ active }) {
-  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>)
 }
 function IconTrack({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>)
@@ -57,11 +45,8 @@ const TABS = [
   { id:'dive',      label:'Dive',      icon:IconDive },
   { id:'watch',     label:'Watch',     icon:IconWatch },
   { id:'screen',    label:'Screen',    icon:IconScreen },
-  { id:'options',   label:'Options',   icon:IconOptions },
-  { id:'money',     label:'Money',     icon:IconMoney },
-  { id:'compare',   label:'VS',        icon:IconCompare },
-  { id:'global',    label:'Global',    icon:IconGlobal },
-  { id:'learn',     label:'Learn',     icon:IconLearn },
+  { id:'flow',      label:'Flow',      icon:IconFlow },
+  { id:'macro',     label:'Macro',     icon:IconMacro },
   { id:'track',     label:'Track',     icon:IconTrack },
   { id:'portfolio', label:'Portfolio', icon:IconPortfolio },
 ]
@@ -70,6 +55,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dive')
   const [diveQuery, setDiveQuery] = useState({ ticker: '', version: 0 })
   const [showOnboarding, setShowOnboarding] = useState(() => !checkOnboarded())
+  const [showLearn, setShowLearn] = useState(false)
   const [mkt, setMkt] = useState(() => marketStatus())
 
   useEffect(() => {
@@ -101,6 +87,7 @@ export default function App() {
           </div>
         </div>
         <div className="header-right">
+          <button onClick={() => setShowLearn(v => !v)} style={{ background:'transparent', border:'1px solid #333', borderRadius:8, color:'#888', fontFamily:'var(--font-mono)', fontSize:'0.72rem', padding:'4px 9px', cursor:'pointer', letterSpacing:0.5 }}>?</button>
           <div className={`mkt-badge ${mkt.open ? 'open' : 'closed'}`}>
             <span className={`mkt-dot ${mkt.open ? 'open' : 'closed'}`} />
             {mkt.label}
@@ -112,14 +99,21 @@ export default function App() {
         <div style={{display: activeTab==='dive'      ? 'contents' : 'none'}}><ErrorBoundary><DeepDive initialTicker={diveQuery.ticker} diveVersion={diveQuery.version} onNavigate={navigateToDive} /></ErrorBoundary></div>
         <div style={{display: activeTab==='watch'     ? 'contents' : 'none'}}><ErrorBoundary><Watchlist onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
         <div style={{display: activeTab==='screen'    ? 'contents' : 'none'}}><ErrorBoundary><Screener onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
-        <div style={{display: activeTab==='options'   ? 'contents' : 'none'}}><ErrorBoundary><Options onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
-        <div style={{display: activeTab==='money'     ? 'contents' : 'none'}}><ErrorBoundary><SmartMoney onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
-        <div style={{display: activeTab==='compare'   ? 'contents' : 'none'}}><ErrorBoundary><Compare /></ErrorBoundary></div>
-        <div style={{display: activeTab==='global'    ? 'contents' : 'none'}}><ErrorBoundary><GlobalImpact onNavigate={navigateToDive} /></ErrorBoundary></div>
-        <div style={{display: activeTab==='learn'     ? 'contents' : 'none'}}><ErrorBoundary><Learn /></ErrorBoundary></div>
+        <div style={{display: activeTab==='flow'      ? 'contents' : 'none'}}><ErrorBoundary><Flow onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='macro'     ? 'contents' : 'none'}}><ErrorBoundary><Macro onNavigate={navigateToDive} /></ErrorBoundary></div>
         <div style={{display: activeTab==='track'     ? 'contents' : 'none'}}><ErrorBoundary><TrackRecord /></ErrorBoundary></div>
         <div style={{display: activeTab==='portfolio' ? 'contents' : 'none'}}><ErrorBoundary><Portfolio onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
       </main>
+
+      {/* Learn overlay */}
+      {showLearn && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.94)', zIndex:500, overflowY:'auto' }}>
+          <div style={{ display:'flex', justifyContent:'flex-end', padding:'10px 16px', position:'sticky', top:0, background:'rgba(0,0,0,0.94)', borderBottom:'1px solid #1a1a1a' }}>
+            <button onClick={() => setShowLearn(false)} style={{ background:'transparent', border:'1px solid #333', borderRadius:8, color:'#888', fontFamily:'var(--font-mono)', fontSize:'0.72rem', padding:'6px 14px', cursor:'pointer' }}>✕ Close</button>
+          </div>
+          <ErrorBoundary><Learn /></ErrorBoundary>
+        </div>
+      )}
 
       <nav className="bottom-nav">
         <div className="nav-scroll-inner">

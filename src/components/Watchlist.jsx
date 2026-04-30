@@ -221,7 +221,7 @@ export default function Watchlist({ onNavigateToDive }) {
         <>
           <div style={{ display:'flex', gap:8, marginBottom:8 }}>
             <button className="btn btn-primary" onClick={handleRefresh} disabled={loading} style={{ flex:1 }}>
-              {loading ? `Scoring ${progress}%…` : `Score All (${list.length} tickers)`}
+              {loading ? `Scoring ${progress}%…` : `Score All (${list.length} ${list.length === 1 ? 'ticker' : 'tickers'})`}
             </button>
             <button onClick={async () => {
               if (permission === 'granted') { setToast('🔔 Alerts already enabled'); return }

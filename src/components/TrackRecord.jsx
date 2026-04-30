@@ -76,7 +76,9 @@ function SignalCard({ signal, onDelete, onExpand, expanded }) {
             <div key={label} style={{ flex: 1, background: '#111', borderRadius: 8, padding: '7px 10px', textAlign: 'center' }}>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: '#555', marginBottom: 3 }}>{label}</div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: outcomeColor(ret) }}>
-                {age < parseInt(label) && ret == null ? <span style={{ color: '#444' }}>pending</span> : fmt(ret)}
+                {age < parseInt(label) && ret == null
+          ? <span style={{ color: '#555', fontSize:'0.68rem' }}>~{parseInt(label) - age}d</span>
+          : fmt(ret)}
               </div>
             </div>
           ))}
