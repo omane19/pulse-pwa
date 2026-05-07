@@ -2,434 +2,336 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   POLYMARKET TAB — Market Prediction Intelligence
-   
-   Features:
-   - 🔥 Hot Events: High volume + recent price swings
-   - ⚠️ Don't Miss: Watchlist-related events resolving soon
-   - 📊 Macro Outlook: Recession, Fed rates, sector trends
-   - Quality scoring: Volume + time-to-resolution filters
-   - 24h price tracking via localStorage
-══════════════════════════════════════════════════════════════════════════════ */
-
-const GAMMA_API = '/api/proxy?provider=polymarket&path='
-
-// Quality thresholds
-const VOLUME_HIGH = 5_000_000
+const VOLUME_HIGH   = 5_000_000
 const VOLUME_MEDIUM = 500_000
-const VOLUME_MIN = 100_000
-const DAYS_URGENT = 7
-const DAYS_NEAR = 30
-const HOT_MOVE_THRESHOLD = 0.15  // 15 point swing = hot
+const VOLUME_MIN    = 100_000
 
-/* ── Parse outcomePrices — Gamma API returns a JSON string, not an array ── */
-function parseOutcomePrices(outcomePrices) {
-  if (!outcomePrices) return []
-  if (Array.isArray(outcomePrices)) return outcomePrices.map(Number)
-  try { return JSON.parse(outcomePrices).map(Number) } catch { return [] }
+function parseOutcomePrices(op) {
+  if (!op) return []
+  if (Array.isArray(op)) return op.map(Number)
+  try { return JSON.parse(op).map(Number) } catch { return [] }
 }
 
-/* ── Market Quality Scoring ────────────────────────────────────────────────── */
-function getMarketQuality(market) {
-  const volume = market.volumeNum ?? 0
-  const daysLeft = Math.floor((new Date(market.endDate) - Date.now()) / 86400000)
-  
-  if (volume >= VOLUME_HIGH && daysLeft <= DAYS_NEAR) return { tier: 'high', label: '🟢 High Confidence', color: '#00C805' }
-  if (volume >= VOLUME_MEDIUM && daysLeft <= 90) return { tier: 'medium', label: '🟡 Medium', color: '#FFD700' }
-  if (volume >= VOLUME_MIN) return { tier: 'low', label: '⚪ Low Signal', color: '#666' }
-  return null  // filter out
+function daysUntil(dateStr) {
+  return Math.floor((new Date(dateStr) - Date.now()) / 86400000)
 }
 
-/* ── Hot Event Detection ──────────────────────────────────────────────────── */
-function calculateHotScore(market, priceHistory) {
-  const volume = market.volumeNum ?? 0
+function fmtVol(v) {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
+  if (v >= 1_000)     return `$${(v / 1_000).toFixed(0)}K`
+  return `$${v}`
+}
+
+function timeAgo(ts) {
+  if (!ts) return ''
+  const s = (Date.now() - ts) / 1000
+  if (s < 60)   return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  return `${Math.floor(s / 3600)}h ago`
+}
+
+/* ── Hot score — volume-based so it works on first load ── */
+function hotScore(market, priceHistory) {
+  const vol   = market.volumeNum ?? 0
+  const days  = daysUntil(market.endDate)
   const prices = parseOutcomePrices(market.outcomePrices)
-  const currentPrice = prices[0] ?? 0.5
-  const price24h = priceHistory[market.id]?.price ?? currentPrice
-  const priceChange = Math.abs(currentPrice - price24h)
-  const daysLeft = Math.floor((new Date(market.endDate) - Date.now()) / 86400000)
-  const urgencyBoost = daysLeft <= DAYS_URGENT ? 2 : 1
-  
-  return (volume / 1_000_000) * (priceChange * 10) * urgencyBoost
+  const cur   = prices[0] ?? 0.5
+  const hist  = priceHistory[market.id]?.price
+  const move  = hist != null ? Math.abs(cur - hist) : 0
+  const urgency = days <= 7 ? 2 : days <= 30 ? 1.3 : 1
+  return (Math.log10(Math.max(vol, 100)) + move * 30) * urgency
 }
 
-/* ── Watchlist Relevance ──────────────────────────────────────────────────── */
-function isRelevantToWatchlist(market, watchlistTickers) {
-  const question = (market.question || '').toUpperCase()
-  return watchlistTickers.some(ticker => {
-    if (question.includes(ticker)) return true
-    // Strip hyphens/numbers from tickers like BRK-B
-    const stripped = ticker.replace(/[0-9-]/g, '')
-    if (stripped.length > 1 && question.includes(stripped)) return true
-    // Match first significant word of company name (Apple, Microsoft, Tesla, etc.)
-    const company = (TICKER_NAMES[ticker] || '').toUpperCase()
-    if (company) {
-      const words = company.split(/\s+/)
-      return words.some(w => w.length > 3 && question.includes(w))
-    }
-    return false
+/* ── Watchlist relevance ── */
+function isWatchlistMatch(market, tickers) {
+  if (!tickers.length) return false
+  const q = (market.question || '').toUpperCase()
+  return tickers.some(t => {
+    if (q.includes(t)) return true
+    const stripped = t.replace(/[0-9-]/g, '')
+    if (stripped.length > 1 && q.includes(stripped)) return true
+    const name = (TICKER_NAMES[t] || '').toUpperCase()
+    return name ? name.split(/\s+/).some(w => w.length > 3 && q.includes(w)) : false
   })
 }
 
-/* ── Don't Miss Criteria ───────────────────────────────────────────────────── */
-function isDontMiss(market, watchlistTickers) {
-  const daysLeft = Math.floor((new Date(market.endDate) - Date.now()) / 86400000)
-  const volume = market.volumeNum ?? 0
-  const relevant = isRelevantToWatchlist(market, watchlistTickers)
-  const highImpact = (market.question || '').toLowerCase().match(/earnings|beat|guidance|launch|approval|announce/)
-  
-  return daysLeft <= DAYS_URGENT && 
-         daysLeft > 0 && 
-         volume >= VOLUME_MEDIUM && 
-         relevant && 
-         highImpact
+function isMacro(market) {
+  return /(recession|fed|rate cut|rate hike|gdp|inflation|unemployment|tariff|trade war|election|congress|senate|treasury|fomc)/i.test(market.question)
 }
 
-/* ── Macro Market Detection ────────────────────────────────────────────────── */
-function isMacroMarket(market) {
-  const q = (market.question || '').toLowerCase()
-  return q.match(/recession|fed|rate cut|gdp|inflation|unemployment|stimulus|regulation|election/)
+function isSector(market) {
+  return /(ai |artificial intel|ev |electric vehicle|chip|semiconductor|tech|energy|crypto|bitcoin|ethereum|ipo|merger|acquisition|drug|fda|clinical)/i.test(market.question)
 }
 
-/* ── Sector Market Detection ───────────────────────────────────────────────── */
-function isSectorMarket(market) {
-  const q = (market.question || '').toLowerCase()
-  return q.match(/ai|ev|electric vehicle|chip|semiconductor|tech|energy|crypto|ipo|merger/)
-}
-
-/* ── Main Component ────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════
+   MAIN COMPONENT
+══════════════════════════════════════════ */
 export default function Polymarket() {
   const { list: watchlistTickers } = useWatchlist()
-  const [markets, setMarkets] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [markets,      setMarkets]      = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState(null)
   const [priceHistory, setPriceHistory] = useState({})
-  const [filter, setFilter] = useState('all') // all | watchlist | macro | sector
+  const [filter,       setFilter]       = useState('all')
+  const [lastRefreshed,setLastRefreshed]= useState(null)
 
-  // Load price history from localStorage on mount
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('polymarket_price_history')
-      if (stored) setPriceHistory(JSON.parse(stored))
+      const s = localStorage.getItem('polymarket_price_history')
+      if (s) setPriceHistory(JSON.parse(s))
     } catch {}
   }, [])
 
-  // Fetch markets from Polymarket
   const fetchMarkets = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
-      const response = await fetch(`${GAMMA_API}/markets%3Factive%3Dtrue%26closed%3Dfalse%26limit%3D100`)
-      if (!response.ok) throw new Error(`Polymarket API error: ${response.status}`)
-
-      const data = await response.json()
-      const filtered = (data || []).filter(m => {
-        const quality = getMarketQuality(m)
-        return quality !== null  // only show markets that pass quality threshold
+      const path = encodeURIComponent('/markets?active=true&closed=false&limit=200')
+      const res = await fetch(`/api/proxy?provider=polymarket&path=${path}`, {
+        cache: 'no-store'  // always bypass browser cache — prices change constantly
       })
-
-      setMarkets(filtered)
-
-      // Store current prices for 24h baseline tracking
-      // Use functional update to always merge against latest history, not stale closure
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const raw = await res.json()
+      const data = (Array.isArray(raw) ? raw : []).filter(m => (m.volumeNum ?? 0) >= VOLUME_MIN)
+      setMarkets(data)
+      setLastRefreshed(Date.now())
       setPriceHistory(prev => {
-        const merged = { ...prev }
-        filtered.forEach(m => {
-          const prices = parseOutcomePrices(m.outcomePrices)
-          const currentPrice = prices[0] ?? 0.5
-          // Only set baseline if new market or existing baseline is >24h old
-          if (!merged[m.id] || Date.now() - merged[m.id].timestamp > 86400000) {
-            merged[m.id] = { price: currentPrice, timestamp: Date.now() }
-          }
+        const next = { ...prev }
+        data.forEach(m => {
+          const cur = parseOutcomePrices(m.outcomePrices)[0] ?? 0.5
+          if (!next[m.id] || Date.now() - next[m.id].timestamp > 86400000)
+            next[m.id] = { price: cur, timestamp: Date.now() }
         })
-        try { localStorage.setItem('polymarket_price_history', JSON.stringify(merged)) } catch {}
-        return merged
+        try { localStorage.setItem('polymarket_price_history', JSON.stringify(next)) } catch {}
+        return next
       })
-
-    } catch (err) {
-      setError(err.message)
-      console.error('[Polymarket] Fetch error:', err)
+    } catch (e) {
+      setError(e.message)
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // Use a ref so the interval always calls the latest fetchMarkets without restarting
-  const fetchMarketsRef = useRef(fetchMarkets)
-  fetchMarketsRef.current = fetchMarkets
-
+  const fetchRef = useRef(fetchMarkets)
+  fetchRef.current = fetchMarkets
   useEffect(() => {
-    fetchMarketsRef.current()
-    const interval = setInterval(() => fetchMarketsRef.current(), 300000) // refresh every 5 min
-    return () => clearInterval(interval)
+    fetchRef.current()
+    const id = setInterval(() => fetchRef.current(), 300000)
+    return () => clearInterval(id)
   }, [])
 
-  // Categorize markets
-  const hotEvents = markets
-    .map(m => ({ ...m, hotScore: calculateHotScore(m, priceHistory) }))
-    .filter(m => m.hotScore > 20)
-    .sort((a, b) => b.hotScore - a.hotScore)
-    .slice(0, 5)
+  /* ── Derived lists ── */
+  const byVol = [...markets].sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
 
-  const dontMiss = markets
-    .filter(m => isDontMiss(m, watchlistTickers))
-    .sort((a, b) => {
-      const daysA = Math.floor((new Date(a.endDate) - Date.now()) / 86400000)
-      const daysB = Math.floor((new Date(b.endDate) - Date.now()) / 86400000)
-      return daysA - daysB  // soonest first
-    })
-
-  const macroMarkets = markets
-    .filter(isMacroMarket)
-    .sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
+  const resolvingSoon = markets
+    .filter(m => { const d = daysUntil(m.endDate); return d >= 0 && d <= 30 && (m.volumeNum ?? 0) >= VOLUME_MEDIUM })
+    .sort((a, b) => new Date(a.endDate) - new Date(b.endDate))
     .slice(0, 6)
 
-  const sectorMarkets = markets
-    .filter(isSectorMarket)
-    .sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
+  const topMarkets = [...markets]
+    .map(m => ({ ...m, _hot: hotScore(m, priceHistory) }))
+    .sort((a, b) => b._hot - a._hot)
     .slice(0, 6)
 
-  const watchlistMarkets = markets
-    .filter(m => isRelevantToWatchlist(m, watchlistTickers))
-    .sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
+  const macroList     = markets.filter(isMacro).sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
+  const sectorList    = markets.filter(isSector).sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
+  const watchlistList = markets.filter(m => isWatchlistMatch(m, watchlistTickers)).sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
 
-  // Active filter — use spread to avoid mutating markets state array
   const displayMarkets =
-    filter === 'watchlist' ? watchlistMarkets :
-    filter === 'macro' ? macroMarkets :
-    filter === 'sector' ? sectorMarkets :
-    [...markets].sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0)).slice(0, 20)
+    filter === 'macro'     ? macroList.slice(0, 20)  :
+    filter === 'sector'    ? sectorList.slice(0, 20) :
+    filter === 'watchlist' ? watchlistList            :
+    byVol.slice(0, 20)
 
-  if (loading && markets.length === 0) {
-    return (
-      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-        <div style={{ color: '#00E5FF', marginBottom: 8 }}>Loading market data...</div>
-      </div>
-    )
-  }
+  const counts = { all: byVol.length, macro: macroList.length, sector: sectorList.length, watchlist: watchlistList.length }
 
-  if (error) {
-    return (
-      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-        <div style={{ color: '#FF5000', marginBottom: 8 }}>⚠️ Failed to load Polymarket data</div>
-        <div style={{ color: '#666', fontSize: '0.72rem', marginBottom: 4 }}>{error}</div>
-        <div style={{ color: '#444', fontSize: '0.66rem', marginBottom: 16 }}>Check your connection or try again</div>
-        <button onClick={fetchMarkets} style={{
-          padding: '10px 24px', background: 'rgba(0,229,255,0.1)',
-          border: '1px solid rgba(0,229,255,0.3)', borderRadius: 8, color: '#00E5FF',
-          cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.72rem'
-        }}>
-          ↻ Refresh Markets
-        </button>
-      </div>
-    )
-  }
+  /* ── Loading / Error ── */
+  if (loading && markets.length === 0) return (
+    <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+      <div style={{ color: '#00E5FF', fontFamily: 'var(--font-mono)', fontSize: '0.76rem' }}>Loading prediction markets…</div>
+    </div>
+  )
+
+  if (error && markets.length === 0) return (
+    <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+      <div style={{ color: '#FF5000', fontSize: '0.82rem', marginBottom: 8 }}>⚠️ Failed to load</div>
+      <div style={{ color: '#555', fontSize: '0.66rem', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>{error}</div>
+      <button onClick={fetchMarkets} style={{ padding: '10px 24px', background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)', borderRadius: 8, color: '#00E5FF', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
+        ↻ Retry
+      </button>
+    </div>
+  )
 
   return (
     <div style={{ padding: '16px 12px 80px' }}>
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 900, color: '#E8E8E8', marginBottom: 4 }}>
-            Market Predictions
+            Prediction Markets
           </h1>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', color: '#888', letterSpacing: 0.5 }}>
-            Real-time probabilities from Polymarket prediction markets
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: '#666' }}>
+            {lastRefreshed
+              ? `Updated ${timeAgo(lastRefreshed)} · ${markets.length} active markets`
+              : 'Real-time probabilities · Polymarket'}
           </div>
         </div>
         <button onClick={fetchMarkets} disabled={loading} style={{
-          padding: '6px 12px', background: 'rgba(0,229,255,0.08)',
-          border: '1px solid rgba(0,229,255,0.25)', borderRadius: 8, color: loading ? '#444' : '#00E5FF',
-          cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)',
-          fontSize: '0.66rem', flexShrink: 0, marginTop: 4
+          padding: '6px 14px', background: 'rgba(0,229,255,0.08)',
+          border: '1px solid rgba(0,229,255,0.25)', borderRadius: 8,
+          color: loading ? '#444' : '#00E5FF', cursor: loading ? 'not-allowed' : 'pointer',
+          fontFamily: 'var(--font-mono)', fontSize: '0.7rem', flexShrink: 0, marginTop: 4
         }}>
-          {loading ? '…' : '↻'}
+          {loading ? '…' : '↻ Refresh'}
         </button>
       </div>
 
-      {/* Hot Events */}
-      {hotEvents.length > 0 && (
-        <Section title="🔥 HOT RIGHT NOW" subtitle="High volume + recent price movement">
-          {hotEvents.map(m => (
-            <MarketCard key={m.id} market={m} priceHistory={priceHistory} showHotBadge />
-          ))}
+      {/* ── Resolving Soon ── */}
+      {resolvingSoon.length > 0 && (
+        <Section title="⏰ RESOLVING SOON" subtitle="Closing within 30 days · $500K+ volume">
+          {resolvingSoon.map(m => <MarketCard key={m.id} market={m} priceHistory={priceHistory} />)}
         </Section>
       )}
 
-      {/* Don't Miss */}
-      {dontMiss.length > 0 && (
-        <Section title="⚠️ DON'T MISS" subtitle="Watchlist events resolving soon">
-          {dontMiss.map(m => (
-            <MarketCard key={m.id} market={m} priceHistory={priceHistory} showUrgent />
-          ))}
+      {/* ── Top Markets (shown in All view only) ── */}
+      {filter === 'all' && (
+        <Section title="🔥 TOP MARKETS" subtitle="Highest liquidity · most market confidence">
+          {topMarkets.map(m => <MarketCard key={m.id} market={m} priceHistory={priceHistory} showTopBadge />)}
         </Section>
       )}
 
-      {/* Filter Tabs */}
+      {/* ── Watchlist section ── */}
+      {watchlistList.length > 0 && filter === 'all' && (
+        <Section title="👁 YOUR WATCHLIST" subtitle="Prediction markets tied to your stocks">
+          {watchlistList.slice(0, 4).map(m => <MarketCard key={m.id} market={m} priceHistory={priceHistory} />)}
+        </Section>
+      )}
+
+      {/* ── Filter Tabs ── */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, marginTop: 24 }}>
-        {[
-          ['all', 'All Markets'],
-          ['watchlist', 'Watchlist'],
-          ['macro', 'Macro'],
-          ['sector', 'Sectors']
-        ].map(([key, label]) => (
-          <button key={key} onClick={() => setFilter(key)}
-            style={{
-              flex: 1, padding: '6px 8px', borderRadius: 8, fontSize: '0.68rem',
-              fontFamily: 'var(--font-mono)', cursor: 'pointer',
-              background: filter === key ? 'rgba(0,229,255,0.1)' : '#111',
-              border: `1px solid ${filter === key ? 'rgba(0,229,255,0.4)' : '#252525'}`,
-              color: filter === key ? '#00E5FF' : '#666'
-            }}>
-            {label}
+        {[['all','All'],['macro','Macro'],['sector','Sectors'],['watchlist','Watchlist']].map(([k, l]) => (
+          <button key={k} onClick={() => setFilter(k)} style={{
+            flex: 1, padding: '7px 4px', borderRadius: 8, fontSize: '0.62rem',
+            fontFamily: 'var(--font-mono)', cursor: 'pointer',
+            background: filter === k ? 'rgba(0,229,255,0.1)' : '#111',
+            border: `1px solid ${filter === k ? 'rgba(0,229,255,0.4)' : '#252525'}`,
+            color: filter === k ? '#00E5FF' : '#666', lineHeight: 1.3
+          }}>
+            {l}
+            {counts[k] > 0 && <div style={{ fontSize: '0.54rem', opacity: 0.7, marginTop: 1 }}>{counts[k]}</div>}
           </button>
         ))}
       </div>
 
-      {/* Filtered Markets */}
+      {/* ── Filtered Market List ── */}
       {displayMarkets.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {displayMarkets.map(m => (
-            <MarketCard key={m.id} market={m} priceHistory={priceHistory} />
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {displayMarkets.map(m => <MarketCard key={m.id} market={m} priceHistory={priceHistory} />)}
+          </div>
+          {counts[filter] > 20 && (
+            <div style={{ textAlign: 'center', padding: '14px 0', color: '#555', fontSize: '0.62rem', fontFamily: 'var(--font-mono)' }}>
+              Showing 20 of {counts[filter]} markets
+            </div>
+          )}
+        </>
       ) : (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: '#666', fontSize: '0.76rem' }}>
-          No markets found for this filter
+        <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+          <div style={{ color: '#555', fontSize: '0.76rem', marginBottom: 6 }}>
+            {filter === 'watchlist' ? 'No markets match your watchlist tickers' : 'No markets for this filter'}
+          </div>
+          {filter === 'watchlist' && (
+            <div style={{ color: '#444', fontSize: '0.62rem', fontFamily: 'var(--font-mono)' }}>
+              Add stocks to your watchlist to see relevant markets here
+            </div>
+          )}
         </div>
       )}
-
-      {/* Refresh Button */}
-      <button onClick={fetchMarkets} disabled={loading} style={{
-        marginTop: 20, width: '100%', padding: '10px', background: 'rgba(0,229,255,0.1)',
-        border: '1px solid rgba(0,229,255,0.3)', borderRadius: 8, color: '#00E5FF',
-        cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)',
-        fontSize: '0.72rem', opacity: loading ? 0.5 : 1
-      }}>
-        {loading ? 'Refreshing...' : '↻ Refresh Markets'}
-      </button>
     </div>
   )
 }
 
-/* ── Section Header Component ──────────────────────────────────────────────── */
+/* ── Section ── */
 function Section({ title, subtitle, children }) {
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', fontWeight: 700, color: '#E8E8E8', letterSpacing: 1 }}>
-          {title}
-        </div>
-        {subtitle && (
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: '#666', marginTop: 2 }}>
-            {subtitle}
-          </div>
-        )}
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 700, color: '#E8E8E8', letterSpacing: 0.8 }}>{title}</div>
+        {subtitle && <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: '#555', marginTop: 2 }}>{subtitle}</div>}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {children}
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>
     </div>
   )
 }
 
-/* ── Market Card Component ─────────────────────────────────────────────────── */
-function MarketCard({ market, priceHistory, showHotBadge, showUrgent }) {
-  const prices = parseOutcomePrices(market.outcomePrices)
-  const yesPrice = prices[0] ?? 0.5
-  const probability = Math.round(yesPrice * 100)
-  const volume = market.volumeNum ?? 0
-  const endDate = new Date(market.endDate)
-  const daysLeft = Math.floor((endDate - Date.now()) / 86400000)
-  const quality = getMarketQuality(market)
-  
-  // 24h price change
-  const price24h = priceHistory[market.id]?.price || yesPrice
-  const priceChange = yesPrice - price24h
-  const priceChangePct = Math.round(priceChange * 100)
+/* ── Market Card ── */
+function MarketCard({ market, priceHistory, showTopBadge }) {
+  const prices  = parseOutcomePrices(market.outcomePrices)
+  const yes     = prices[0] ?? 0.5
+  const prob    = Math.round(yes * 100)
+  const vol     = market.volumeNum ?? 0
+  const days    = daysUntil(market.endDate)
+  const hist    = priceHistory[market.id]?.price
+  const change  = hist != null ? Math.round((yes - hist) * 100) : null
+  const isUrgent = days >= 0 && days <= 7
+  const probColor = prob >= 70 ? '#00C805' : prob >= 40 ? '#FFD700' : '#FF5000'
 
   return (
-    <div style={{
-      background: '#111', border: '1px solid #252525', borderRadius: 12, padding: '12px 14px',
-      cursor: 'pointer', transition: 'border-color 0.2s'
-    }}
-    onMouseEnter={e => e.currentTarget.style.borderColor = '#00E5FF40'}
-    onMouseLeave={e => e.currentTarget.style.borderColor = '#252525'}
-    onClick={() => window.open(`https://polymarket.com/event/${market.slug || market.id}`, '_blank')}>
-      
+    <div
+      style={{
+        background: '#111',
+        border: `1px solid ${isUrgent ? 'rgba(255,215,0,0.25)' : '#1e1e1e'}`,
+        borderRadius: 12, padding: '12px 14px', cursor: 'pointer',
+      }}
+      onClick={() => window.open(`https://polymarket.com/event/${market.slug || market.id}`, '_blank')}
+    >
       {/* Question */}
-      <div style={{ fontSize: '0.82rem', lineHeight: 1.5, color: '#E8E8E8', marginBottom: 8 }}>
+      <div style={{ fontSize: '0.8rem', lineHeight: 1.55, color: '#DDD', marginBottom: 10 }}>
         {market.question}
       </div>
 
-      {/* Probability Bar */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.1rem', fontWeight: 900, 
-            color: probability >= 70 ? '#00C805' : probability >= 50 ? '#FFD700' : '#FF5000' }}>
-            {probability}%
+      {/* Probability row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.4rem', fontWeight: 900, color: probColor, lineHeight: 1, flexShrink: 0 }}>
+          {prob}%
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ height: 5, background: '#1e1e1e', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${prob}%`, background: probColor, borderRadius: 3, transition: 'width 0.4s' }} />
           </div>
-          {priceChangePct !== 0 && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.64rem', 
-              color: priceChangePct > 0 ? '#00C805' : '#FF5000' }}>
-              {priceChangePct > 0 ? '+' : ''}{priceChangePct} pts 24h
-            </div>
-          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', color: '#444' }}>YES</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', color: '#444' }}>NO {100 - prob}%</span>
+          </div>
         </div>
-        <div style={{ height: 4, background: '#252525', borderRadius: 2, overflow: 'hidden' }}>
-          <div style={{ 
-            height: '100%', width: `${probability}%`, 
-            background: probability >= 70 ? '#00C805' : probability >= 50 ? '#FFD700' : '#FF5000',
-            transition: 'width 0.3s'
-          }} />
-        </div>
+        {change != null && change !== 0 && (
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: change > 0 ? '#00C805' : '#FF5000', textAlign: 'right', flexShrink: 0 }}>
+            {change > 0 ? '+' : ''}{change}pts<br />
+            <span style={{ color: '#444', fontSize: '0.52rem' }}>24h</span>
+          </div>
+        )}
       </div>
 
-      {/* Metadata */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        {/* Quality Badge */}
-        {quality && (
-          <div style={{ 
-            fontFamily: 'var(--font-mono)', fontSize: '0.58rem', padding: '2px 6px',
-            background: `${quality.color}15`, border: `1px solid ${quality.color}40`,
-            borderRadius: 4, color: quality.color
-          }}>
-            {quality.label}
-          </div>
+      {/* Footer */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {isUrgent && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', padding: '2px 6px', background: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.25)', borderRadius: 4, color: '#FFD700' }}>
+            ⏰ {days === 0 ? 'TODAY' : `${days}d left`}
+          </span>
         )}
-
-        {/* Hot Badge */}
-        {showHotBadge && (
-          <div style={{ 
-            fontFamily: 'var(--font-mono)', fontSize: '0.58rem', padding: '2px 6px',
-            background: 'rgba(255,80,0,0.15)', border: '1px solid rgba(255,80,0,0.4)',
-            borderRadius: 4, color: '#FF5000'
-          }}>
-            🔥 HOT
-          </div>
+        {showTopBadge && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', padding: '2px 6px', background: 'rgba(255,80,0,0.1)', border: '1px solid rgba(255,80,0,0.2)', borderRadius: 4, color: '#FF8040' }}>
+            🔥 Top
+          </span>
         )}
-
-        {/* Urgent Badge */}
-        {showUrgent && (
-          <div style={{ 
-            fontFamily: 'var(--font-mono)', fontSize: '0.58rem', padding: '2px 6px',
-            background: 'rgba(255,215,0,0.15)', border: '1px solid rgba(255,215,0,0.4)',
-            borderRadius: 4, color: '#FFD700'
-          }}>
-            ⚠️ {daysLeft}d left
-          </div>
+        {vol >= VOLUME_HIGH && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', padding: '2px 6px', background: 'rgba(0,200,5,0.08)', border: '1px solid rgba(0,200,5,0.2)', borderRadius: 4, color: '#00C805' }}>
+            🟢 High confidence
+          </span>
         )}
-
-        {/* Volume */}
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: '#666' }}>
-          ${volume >= 1_000_000 ? `${(volume / 1_000_000).toFixed(1)}M` : `${(volume / 1_000).toFixed(0)}K`} vol
-        </div>
-
-        {/* Expiry */}
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: '#666' }}>
-          {daysLeft > 0 ? `${daysLeft}d left` : 'Resolving soon'}
-        </div>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: '#555', marginLeft: 'auto' }}>
+          {fmtVol(vol)} · {days > 0 ? `${days}d` : days === 0 ? 'today' : 'ended'}
+        </span>
       </div>
     </div>
   )

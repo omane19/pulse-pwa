@@ -90,9 +90,13 @@ export default async function handler(req, res) {
 
     const data = await upstream.json()
 
-    // Cache headers — match our in-memory TTLs
-    const ttl = getCacheTTL(apiPath)
-    res.setHeader('Cache-Control', `public, max-age=${ttl}, s-maxage=${ttl}`)
+    // Polymarket: never cache — prediction prices change by the minute
+    if (provider === 'polymarket') {
+      res.setHeader('Cache-Control', 'no-store')
+    } else {
+      const ttl = getCacheTTL(apiPath)
+      res.setHeader('Cache-Control', `public, max-age=${ttl}, s-maxage=${ttl}`)
+    }
 
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v))
     return res.status(200).json(data)
