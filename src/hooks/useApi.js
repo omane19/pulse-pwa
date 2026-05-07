@@ -279,7 +279,7 @@ export async function fetchMetrics(ticker) {
         pbAnnual:        r?.priceToBookRatioTTM || null,
         roeTTM,
         payoutRatio:     r?.dividendPayoutRatioTTM != null ? parseFloat((r.dividendPayoutRatioTTM * 100).toFixed(1)) : null,
-        marketCap:       p.mktCap || null,
+        marketCap:       p.mktCap || p.marketCap || null,
         beta:            p.beta || null,
         fcfPerShare,
         pegRatio,
@@ -434,7 +434,7 @@ export async function fetchProfile(ticker) {
     finnhubIndustry:       p.industry || p.sector || '',   // DeepDive reads finnhubIndustry
     sector:                p.sector || '',
     industry:              p.industry || '',
-    marketCapitalization:  p.mktCap || null,  // raw dollars (same as fetchMetrics.marketCap)
+    marketCapitalization:  p.mktCap || p.marketCap || null,
     weburl:                p.website || null,
     logo:                  p.image || null,
     exchange:              p.exchangeShortName || null,

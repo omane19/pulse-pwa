@@ -715,7 +715,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                 <div className="price-company">
                   {data.profile?.name||TICKER_NAMES[ticker]||ticker}
                   {data.profile?.finnhubIndustry&&` · ${data.profile.finnhubIndustry}`}
-                  {data.profile?.marketCapitalization&&` · ${fmtMcap(data.profile.marketCapitalization)}`}
+                  {(data.profile?.marketCapitalization||(data.quote?.mc>0?data.quote.mc:null))&&` · ${fmtMcap(data.profile?.marketCapitalization||(data.quote?.mc>0?data.quote.mc:null))}`}
                 </div>
                 <div className="price-big" style={{color}}>${price?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
                 <div className={`price-change ${chg>=0?'pos':'neg'}`}>{chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}% today</div>
@@ -805,7 +805,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
             <>
               <SectionHeader>Key Metrics</SectionHeader>
               <div className="metrics-grid">
-                <MetricCell label="Mkt Cap"    value={fmtMcap(data.metrics?.marketCap||data.profile?.marketCapitalization)}/>
+                <MetricCell label="Mkt Cap"    value={fmtMcap(data.metrics?.marketCap||data.profile?.marketCapitalization||(data.quote?.mc>0?data.quote.mc:null))}/>
                 <MetricCell label="P/E (TTM)"  value={result.pe?`${result.pe.toFixed(1)}×`:'N/A'}/>
                 <MetricCell label="PEG Ratio"  value={data.metrics?.pegRatio?`${data.metrics.pegRatio.toFixed(2)}×`:'N/A'} delta={data.metrics?.pegRatio?(data.metrics.pegRatio<1?'✓ Good':''):''} deltaColor='pos'/>
                 <MetricCell label="FCF/Share"  value={data.metrics?.fcfPerShare!=null?`$${data.metrics.fcfPerShare}`:'N/A'} deltaColor={data.metrics?.fcfPerShare>0?'pos':'neg'}/>
