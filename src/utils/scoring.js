@@ -364,14 +364,19 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
 
   // Dividend yield — positive signal for value/income stocks (non-growth context)
   if (divYield != null && divYield > 0 && (!peg || peg > 1.5)) {
-    if (divYield > 4)       { vs += 0.2; vr.push(`Dividend yield ${divYield.toFixed(1)}% — strong income signal`) }
-    else if (divYield > 2)  { vs += 0.1; vr.push(`Dividend yield ${divYield.toFixed(1)}%`) }
+    const payoutRatio = metrics?.payoutRatio ?? null
+    const isDividendTrap = payoutRatio != null && payoutRatio > 80 && (revenueGrowth == null || revenueGrowth < 5)
+    if (isDividendTrap) {
+      vs -= 0.1; vr.push(`Dividend ${divYield.toFixed(1)}% but payout ${payoutRatio.toFixed(0)}% — sustainability risk`)
+    } else if (divYield > 4) { vs += 0.2; vr.push(`Dividend yield ${divYield.toFixed(1)}% — strong income signal`) }
+    else if (divYield > 2)   { vs += 0.1; vr.push(`Dividend yield ${divYield.toFixed(1)}%`) }
   }
 
   S.valuation = Math.max(-1, Math.min(1, vs)); R.valuation = vr
 
-  // Sentiment
-  const nw = news?.length || 0; const wt = Math.min(nw / 10, 1.0)  // max 1.0x to avoid over-amplification
+  // Sentiment — log-scaled weight: confidence grows with volume but diminishes past 20 articles
+  const nw = news?.length || 0
+  const wt = nw >= 10 ? Math.min(1.0 + Math.log(nw / 10) * 0.2, 1.3) : nw / 10
   const ss = Math.max(-1, Math.min(1, avgSent * 1.5 * wt))
   const lb = avgSent > .08 ? 'Bullish' : avgSent < -.08 ? 'Bearish' : 'Neutral'
   S.sentiment = ss; R.sentiment = [`Credibility-weighted ${avgSent > 0 ? '+' : ''}${avgSent} (${lb}) · ${nw} articles`]
@@ -649,7 +654,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     momentumNotCrashing &&          // not in a crash
     !recentEarningsMiss &&          // company didn't just miss earnings
     S.earnings >= 0 &&              // earnings factor not negative
-    S.analyst > 0                   // analysts still constructive on the business
+    S.analyst > -0.5                // analysts not heavily bearish on the business
   )
 
   // Quality Dip bonus — add to total score before verdict

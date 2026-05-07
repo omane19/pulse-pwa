@@ -116,8 +116,8 @@ export default function Watchlist({ onNavigateToDive }) {
       const out = {}
       for (let i = 0; i < list.length; i += BATCH) {
         const batch = list.slice(i, i + BATCH)
-        const batchEC = await Promise.all(batch.map(t => fetchEarningsCalendar(t).then(ec => [t, ec])))
-        batchEC.forEach(([t, ec]) => { if (ec && ec.date) out[t] = ec })
+        const batchEC = await Promise.allSettled(batch.map(t => fetchEarningsCalendar(t).then(ec => [t, ec])))
+        batchEC.forEach(r => { if (r.status === 'fulfilled' && r.value[1]?.date) out[r.value[0]] = r.value[1] })
       }
       setEarnings(out)
     }
@@ -131,7 +131,7 @@ export default function Watchlist({ onNavigateToDive }) {
     const BATCH = 5
     for (let i = 0; i < list.length; i += BATCH) {
       const batch = list.slice(i, i + BATCH)
-      const batchResults = await Promise.all(batch.map(fetchTickerLite))
+      const batchResults = (await Promise.allSettled(batch.map(fetchTickerLite))).map(r => r.status === 'fulfilled' ? r.value : null)
       for (const data of batchResults) {
         if (!data) continue
         const ea=v=>Array.isArray(v)?v:[]
@@ -288,13 +288,15 @@ export default function Watchlist({ onNavigateToDive }) {
             const canDive = !!onNavigateToDive
             const hasAlert = !!alerts[item.ticker]
             const ec = earnings[item.ticker]
+            const daysToEarnings = ec?.date ? Math.round((new Date(ec.date) - new Date()) / 86400000) : null
+            const earningsUrgent = daysToEarnings != null && daysToEarnings >= 0 && daysToEarnings <= 2
 
             return (
               <div key={item.ticker}
                 onClick={() => canDive && onNavigateToDive(item.ticker)}
                 style={{
                   display:'flex', alignItems:'center', gap:10,
-                  background:G2, border:`1px solid ${hasAlert ? YELLOW+'40' : G4}`, borderRadius:12,
+                  background:G2, border:`1px solid ${earningsUrgent ? RED+'60' : hasAlert ? YELLOW+'40' : G4}`, borderRadius:12,
                   padding:'12px 14px', marginBottom:8,
                   cursor: canDive ? 'pointer' : 'default',
                   WebkitTapHighlightColor:'transparent'
