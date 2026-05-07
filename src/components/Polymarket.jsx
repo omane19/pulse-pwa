@@ -140,10 +140,10 @@ export default function Polymarket() {
   const watchlistList = markets.filter(m => isWatchlistMatch(m, watchlistTickers)).sort((a, b) => (b.volumeNum ?? 0) - (a.volumeNum ?? 0))
 
   const displayMarkets =
-    filter === 'macro'     ? macroList.slice(0, 20)  :
-    filter === 'sector'    ? sectorList.slice(0, 20) :
-    filter === 'watchlist' ? watchlistList            :
-    byVol.slice(0, 20)
+    filter === 'macro'     ? macroList     :
+    filter === 'sector'    ? sectorList    :
+    filter === 'watchlist' ? watchlistList :
+    byVol
 
   const counts = { all: byVol.length, macro: macroList.length, sector: sectorList.length, watchlist: watchlistList.length }
 
@@ -232,11 +232,6 @@ export default function Polymarket() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {displayMarkets.map(m => <MarketCard key={m.id} market={m} priceHistory={priceHistory} />)}
           </div>
-          {counts[filter] > 20 && (
-            <div style={{ textAlign: 'center', padding: '14px 0', color: '#555', fontSize: '0.62rem', fontFamily: 'var(--font-mono)' }}>
-              Showing 20 of {counts[filter]} markets
-            </div>
-          )}
         </>
       ) : (
         <div style={{ padding: '40px 20px', textAlign: 'center' }}>
