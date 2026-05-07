@@ -30,16 +30,19 @@ function timeAgo(ts) {
   return `${Math.floor(s / 3600)}h ago`
 }
 
-/* ── Hot score — volume-based so it works on first load ── */
+/* ── Hot score — 24h event volume as primary signal, price movement as bonus ── */
 function hotScore(market, priceHistory) {
-  const vol   = market.volumeNum ?? 0
-  const days  = daysUntil(market.endDate)
+  const vol24h = market.events?.[0]?.volume24hr ?? 0
+  const vol    = market.volumeNum ?? 0
+  const days   = daysUntil(market.endDate)
   const prices = parseOutcomePrices(market.outcomePrices)
-  const cur   = prices[0] ?? 0.5
-  const hist  = priceHistory[market.id]?.price
-  const move  = hist != null ? Math.abs(cur - hist) : 0
+  const cur    = prices[0] ?? 0.5
+  const hist   = priceHistory[market.id]?.price
+  const move   = hist != null ? Math.abs(cur - hist) : 0
   const urgency = days <= 7 ? 2 : days <= 30 ? 1.3 : 1
-  return (Math.log10(Math.max(vol, 100)) + move * 30) * urgency
+  // Prefer 24h volume (recent activity) over total volume (stale)
+  const base = vol24h > 0 ? Math.log10(Math.max(vol24h, 100)) * 1.5 : Math.log10(Math.max(vol, 100))
+  return (base + move * 30) * urgency
 }
 
 /* ── Watchlist relevance ── */
@@ -283,7 +286,7 @@ function MarketCard({ market, priceHistory, showTopBadge }) {
         border: `1px solid ${isUrgent ? 'rgba(255,215,0,0.25)' : '#1e1e1e'}`,
         borderRadius: 12, padding: '12px 14px', cursor: 'pointer',
       }}
-      onClick={() => window.open(`https://polymarket.com/event/${market.slug || market.id}`, '_blank')}
+      onClick={() => window.open(`https://polymarket.com/event/${market.events?.[0]?.slug || market.slug}`, '_blank')}
     >
       {/* Question */}
       <div style={{ fontSize: '0.8rem', lineHeight: 1.55, color: '#DDD', marginBottom: 10 }}>
