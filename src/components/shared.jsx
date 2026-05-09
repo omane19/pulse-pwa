@@ -1,8 +1,9 @@
 import { usePullToRefresh } from '../hooks/usePullToRefresh.js'
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { timeAgo, getTier } from '../utils/scoring.js'
 import { SOURCE_TIERS } from '../utils/constants.js'
 import { smartSummary } from '../utils/scoring.js'
+import { fetchTickerSearch } from '../hooks/useApi.js'
 
 export function VerdictPill({ verdict }) {
   const cls = verdict === 'BUY' ? 'vp-buy' : verdict === 'HOLD' ? 'vp-hold' : 'vp-avoid'
@@ -197,5 +198,70 @@ export function RefreshButton({ onRefresh, loading }) {
     >
       <span style={{ display: 'inline-block', animation: loading ? 'ptr-spin 0.8s linear infinite' : 'none' }}>↻</span>
     </button>
+  )
+}
+
+/* ── Reusable ticker + company-name autocomplete input ── */
+export function TickerAutocomplete({ value, onChange, onSelect, placeholder = 'Company name or ticker…', className = 'input', style }) {
+  const [suggestions, setSuggestions] = useState([])
+  const [show, setShow] = useState(false)
+  const timer = useRef(null)
+
+  const handleChange = (e) => {
+    const v = e.target.value
+    onChange(v)
+    clearTimeout(timer.current)
+    if (v.length >= 2) {
+      timer.current = setTimeout(async () => {
+        const res = await fetchTickerSearch(v)
+        setSuggestions(res)
+        setShow(res.length > 0)
+      }, 280)
+    } else {
+      setSuggestions([]); setShow(false)
+    }
+  }
+
+  const pick = (s) => {
+    onChange(s.ticker)
+    setSuggestions([]); setShow(false)
+    onSelect && onSelect(s)
+  }
+
+  return (
+    <div style={{ position: 'relative', flex: 1 }}>
+      <input
+        className={className}
+        style={style}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={e => { if (e.key === 'Escape') setShow(false) }}
+        onBlur={() => setTimeout(() => setShow(false), 150)}
+        placeholder={placeholder}
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      {show && suggestions.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, marginTop: 4,
+          background: '#161616', border: '1px solid rgba(0,229,255,0.25)', borderRadius: 10,
+          overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
+        }}>
+          {suggestions.map(s => (
+            <div key={s.ticker}
+              onMouseDown={() => pick(s)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,229,255,0.06)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <div>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem', color: '#fff' }}>{s.ticker}</span>
+                <span style={{ fontSize: '0.68rem', color: '#888', marginLeft: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', verticalAlign: 'middle' }}>{s.name}</span>
+              </div>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', color: '#555', flexShrink: 0 }}>{s.exchange}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

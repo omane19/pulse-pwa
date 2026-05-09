@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
@@ -577,6 +577,9 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [ticker, setTicker] = useState('')
   const {data, loading, error, fetch} = useTickerData()
   const {add, remove, has} = useWatchlist()
+  const [suggestions, setSuggestions] = useState([])
+  const [showSugg, setShowSugg] = useState(false)
+  const searchTimer = React.useRef(null)
   const [result,      setResult]      = useState(null)
   const [toast,       setToast]       = useState(null)
   const [smartMoney,  setSmartMoney]  = useState(null)
@@ -650,19 +653,64 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   return (
     <PullToRefresh onRefresh={handleRefresh} enabled={!!ticker}>
     <div className="page">
-      <div style={{display:'flex',gap:8,marginBottom:10}}>
-        <input className="input" value={input} onChange={e=>setInput(e.target.value.toUpperCase())}
-          onKeyDown={e=>e.key==='Enter'&&handleAnalyze()}
-          placeholder="AAPL · NVDA · SPY · GLD …"
-          autoCapitalize="characters" autoCorrect="off" spellCheck={false}/>
-        <button className="btn btn-primary" style={{width:'auto',padding:'12px 20px'}} onClick={handleAnalyze}>Analyze</button>
+      <div style={{display:'flex',gap:8,marginBottom:10,position:'relative'}}>
+        <div style={{flex:1,position:'relative'}}>
+          <input className="input" value={input}
+            onChange={e => {
+              const v = e.target.value
+              setInput(v)
+              clearTimeout(searchTimer.current)
+              if (v.length >= 2) {
+                searchTimer.current = setTimeout(async () => {
+                  const res = await fetchTickerSearch(v)
+                  setSuggestions(res)
+                  setShowSugg(res.length > 0)
+                }, 280)
+              } else {
+                setSuggestions([]); setShowSugg(false)
+              }
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { setShowSugg(false); handleAnalyze() }
+              if (e.key === 'Escape') setShowSugg(false)
+            }}
+            onBlur={() => setTimeout(() => setShowSugg(false), 150)}
+            placeholder="Company name or ticker…"
+            autoCorrect="off" spellCheck={false} />
+          {showSugg && suggestions.length > 0 && (
+            <div style={{
+              position:'absolute', top:'100%', left:0, right:0, zIndex:200, marginTop:4,
+              background:'#161616', border:'1px solid rgba(0,229,255,0.25)', borderRadius:10,
+              overflow:'hidden', boxShadow:'0 8px 24px rgba(0,0,0,0.6)'
+            }}>
+              {suggestions.map(s => (
+                <div key={s.ticker}
+                  onMouseDown={() => { setInput(s.ticker.toUpperCase()); setShowSugg(false); setSuggestions([]); const t=s.ticker.toUpperCase(); setTicker(t); fetch(t) }}
+                  style={{
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                    padding:'10px 14px', cursor:'pointer', borderBottom:'1px solid rgba(255,255,255,0.05)',
+                    transition:'background 0.1s'
+                  }}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(0,229,255,0.06)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  <div>
+                    <span style={{fontFamily:'var(--font-mono)',fontWeight:700,fontSize:'0.82rem',color:'#fff'}}>{s.ticker}</span>
+                    <span style={{fontSize:'0.68rem',color:'#888',marginLeft:8,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block',verticalAlign:'middle'}}>{s.name}</span>
+                  </div>
+                  <span style={{fontFamily:'var(--font-mono)',fontSize:'0.56rem',color:'#555',flexShrink:0}}>{s.exchange}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button className="btn btn-primary" style={{width:'auto',padding:'12px 20px'}} onClick={()=>{setShowSugg(false);handleAnalyze()}}>Analyze</button>
       </div>
 
       {!data&&!loading&&(
         <div style={{display:'flex',flexWrap:'wrap',gap:5,marginBottom:14}}>
           {['AAPL','NVDA','TSLA','SPY','GLD','PLTR'].map(t=>(
             <button key={t} className="btn btn-ghost" style={{width:'auto',padding:'5px 12px',fontSize:'0.72rem'}}
-              onClick={()=>{setInput(t);fetch(t);setTicker(t)}}>{t}</button>
+              onClick={()=>{setInput(t);setTicker(t);fetch(t);setSuggestions([]);setShowSugg(false)}}>{t}</button>
           ))}
         </div>
       )}

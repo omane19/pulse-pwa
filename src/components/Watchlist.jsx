@@ -4,7 +4,7 @@ import { useNotifications } from '../hooks/useNotifications.js'
 import { fetchTickerLite, fetchScore, fetchRating, fetchEarningsCalendar } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
-import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh } from './shared.jsx'
+import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh, TickerAutocomplete } from './shared.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'; const CYAN='#00E5FF'
 
@@ -241,9 +241,12 @@ export default function Watchlist({ onNavigateToDive }) {
 
       {/* Add input */}
       <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-        <input className="input" value={input} onChange={e => setInput(e.target.value.toUpperCase())}
-          onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          placeholder="Add ticker… e.g. NVDA" autoCapitalize="characters" autoCorrect="off" spellCheck={false} />
+        <TickerAutocomplete
+          value={input}
+          onChange={v => setInput(v.toUpperCase())}
+          onSelect={s => { add(s.ticker); setInput(''); setToast(`Added ${s.ticker}`) }}
+          placeholder="Add company or ticker…"
+        />
         <button className="btn btn-primary" style={{ width:'auto', padding:'12px 18px' }} onClick={handleAdd}>+</button>
       </div>
 

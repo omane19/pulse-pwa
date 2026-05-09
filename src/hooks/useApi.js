@@ -1266,6 +1266,23 @@ export async function fetchUnusualFlow(ticker) {
   } catch { return null }
 }
 
+/* ══════════════════════════════════════════
+   TICKER SEARCH — company name → symbol autocomplete
+   FMP /v3/search returns US exchange listings matching query
+══════════════════════════════════════════ */
+const US_EXCHANGES = new Set(['NASDAQ','NYSE','AMEX','NYSE ARCA','NASDAQ GLOBAL SELECT','NYSE MKT','NYSE American','NYSEARCA'])
+export async function fetchTickerSearch(query) {
+  if (!query || query.length < 2) return []
+  try {
+    const d = await fmpv3(`/search?query=${encodeURIComponent(query)}&limit=10`, 60000)
+    if (!Array.isArray(d)) return []
+    return d
+      .filter(r => r.symbol && r.name && US_EXCHANGES.has(r.exchangeShortName) && !r.symbol.includes('-') && !r.symbol.includes('.'))
+      .slice(0, 6)
+      .map(r => ({ ticker: r.symbol, name: r.name, exchange: r.exchangeShortName }))
+  } catch { return [] }
+}
+
 /* ── React hook ── */
 export function useTickerData() {
   const [data,    setData]    = useState(null)

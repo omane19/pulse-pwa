@@ -3,7 +3,7 @@ import { fetchQuote, fetchCandles, fetchMetrics, fetchNews, fetchRec, fetchEarni
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { VerdictPill, FactorBars, LoadingBar , PullToRefresh } from './shared.jsx'
+import { VerdictPill, FactorBars, LoadingBar, PullToRefresh, TickerAutocomplete } from './shared.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const CYAN='#00E5FF'; const YELLOW='#FFD700'
 const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
@@ -97,10 +97,8 @@ export default function Compare() {
     <PullToRefresh onRefresh={run} enabled={!!(a && b)}>
     <div className="page">
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
-        <input className="input" value={ta} onChange={e=>setTa(e.target.value.toUpperCase())}
-          onKeyDown={e=>e.key==='Enter'&&run()} placeholder="Ticker A" autoCapitalize="characters" autoCorrect="off" spellCheck={false} />
-        <input className="input" value={tb} onChange={e=>setTb(e.target.value.toUpperCase())}
-          onKeyDown={e=>e.key==='Enter'&&run()} placeholder="Ticker B" autoCapitalize="characters" autoCorrect="off" spellCheck={false} />
+        <TickerAutocomplete value={ta} onChange={v => setTa(v.toUpperCase())} onSelect={s => setTa(s.ticker)} placeholder="Company or ticker A" />
+        <TickerAutocomplete value={tb} onChange={v => setTb(v.toUpperCase())} onSelect={s => setTb(s.ticker)} placeholder="Company or ticker B" />
       </div>
 
       <button className="btn btn-primary" style={{ marginBottom:16 }} onClick={run} disabled={loading || !ta.trim() || !tb.trim()}>
