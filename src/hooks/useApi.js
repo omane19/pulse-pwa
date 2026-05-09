@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { TICKER_NAMES } from '../utils/constants.js'
 
 /* ── Key resolution ── */
 function getKey(name) {
@@ -1268,19 +1269,38 @@ export async function fetchUnusualFlow(ticker) {
 
 /* ══════════════════════════════════════════
    TICKER SEARCH — company name → symbol autocomplete
-   FMP /v3/search returns US exchange listings matching query
+   Local TICKER_NAMES dict first (instant), FMP API fallback for unknowns
 ══════════════════════════════════════════ */
-const US_EXCHANGES = new Set(['NASDAQ','NYSE','AMEX','NYSE ARCA','NASDAQ GLOBAL SELECT','NYSE MKT','NYSE American','NYSEARCA'])
 export async function fetchTickerSearch(query) {
   if (!query || query.length < 2) return []
+  const q = query.toLowerCase().trim()
+
+  // Search local dictionary: match ticker prefix OR any word in the description
+  const local = Object.entries(TICKER_NAMES)
+    .filter(([ticker, desc]) => {
+      if (ticker.toLowerCase().startsWith(q)) return true
+      const companyName = desc.split(' — ')[0].toLowerCase()
+      return companyName.split(/[\s,]+/).some(word => word.startsWith(q))
+    })
+    .slice(0, 6)
+    .map(([ticker, desc]) => ({ ticker, name: desc.split(' — ')[0], exchange: '' }))
+
+  if (local.length >= 4) return local  // enough local hits, skip API
+
+  // FMP API fallback — relax filter to just exclude foreign listings (dots in symbol)
   try {
     const d = await fmpv3(`/search?query=${encodeURIComponent(query)}&limit=10`, 60000)
-    if (!Array.isArray(d)) return []
-    return d
-      .filter(r => r.symbol && r.name && US_EXCHANGES.has(r.exchangeShortName) && !r.symbol.includes('-') && !r.symbol.includes('.'))
-      .slice(0, 6)
-      .map(r => ({ ticker: r.symbol, name: r.name, exchange: r.exchangeShortName }))
-  } catch { return [] }
+    if (Array.isArray(d) && d.length) {
+      const seen = new Set(local.map(l => l.ticker))
+      const api = d
+        .filter(r => r.symbol && r.name && !r.symbol.includes('.') && !seen.has(r.symbol))
+        .slice(0, 6 - local.length)
+        .map(r => ({ ticker: r.symbol, name: r.name, exchange: r.exchangeShortName || '' }))
+      return [...local, ...api].slice(0, 6)
+    }
+  } catch {}
+
+  return local
 }
 
 /* ── React hook ── */
