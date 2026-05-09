@@ -87,6 +87,7 @@ export default function SmartMoney({ onNavigateToDive }) {
   const [congressFeed, setCongressFeed] = useState([])
   const [insiderFeed,  setInsiderFeed]  = useState([])
   const [loadingFeed,  setLoadingFeed]  = useState(false)
+  const [feedLoadedAt, setFeedLoadedAt] = useState(null)
 
   const [searchTicker,     setSearchTicker]     = useState('')
   const [congressSearch,   setCongressSearch]   = useState([])
@@ -110,6 +111,7 @@ export default function SmartMoney({ onNavigateToDive }) {
       })
     setCongressFeed(sortByDate(cong))
     setInsiderFeed(sortByDate(ins))
+    setFeedLoadedAt(Date.now())
     setLoadingFeed(false)
   }, [hasFmp])
 
@@ -193,6 +195,16 @@ export default function SmartMoney({ onNavigateToDive }) {
                   ))}
                 </div>
               )}
+              {/* Feed header: timestamp + refresh */}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#555' }}>
+                  {loadingFeed ? 'Loading…' : feedLoadedAt ? `Updated ${Math.round((Date.now()-feedLoadedAt)/60000)}m ago` : ''}
+                </span>
+                <button onClick={loadFeed} disabled={loadingFeed} style={{ background:'none', border:'1px solid #252525', borderRadius:6, padding:'4px 10px', color:'#555', fontFamily:'var(--font-mono)', fontSize:'0.58rem', cursor:'pointer' }}>
+                  ↻ Refresh
+                </button>
+              </div>
+
               {/* Buy-only toggle */}
               <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:16 }}>
                 <button

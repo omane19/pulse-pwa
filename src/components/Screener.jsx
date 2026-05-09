@@ -311,6 +311,7 @@ export default function Screener({ onNavigateToDive }) {
   const [divMinYield, setDivMinYield] = useState(2)
   const [divSector, setDivSector] = useState('All')
   const [divError, setDivError] = useState(null)
+  const [displayLimit, setDisplayLimit] = useState(30)
 
   // Load cached scan results on mount — avoids re-running full scan every page load
   React.useEffect(() => {
@@ -342,7 +343,7 @@ export default function Screener({ onNavigateToDive }) {
     const k = hasKeys()
     // Note: keys may be server-side only — attempt fetch and let proxy handle missing keys
     setApiError(null)
-    setLoading(true); setProgress(0); setResults([]); setRan(false)
+    setLoading(true); setProgress(0); setResults([]); setRan(false); setDisplayLimit(30)
 
     const out = []
 
@@ -878,9 +879,14 @@ export default function Screener({ onNavigateToDive }) {
             </div>
           )}
 
-          {filtered.slice(0, 30).map((item, idx) => (
+          {filtered.slice(0, displayLimit).map((item, idx) => (
             <RankCard key={item.ticker} item={item} rank={idx} showCat={true} onNavigate={onNavigateToDive} />
           ))}
+          {filtered.length > displayLimit && (
+            <button onClick={() => setDisplayLimit(n => n + 30)} style={{ width:'100%', padding:'12px', borderRadius:10, background:'rgba(255,255,255,0.04)', border:`1px solid ${G4}`, color:G1, fontFamily:'var(--font-mono)', fontSize:'0.7rem', cursor:'pointer', marginTop:4 }}>
+              Show more ({filtered.length - displayLimit} remaining)
+            </button>
+          )}
         </>
       )}
 

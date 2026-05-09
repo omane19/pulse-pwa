@@ -102,7 +102,9 @@ export function scoreETF(quote, candles, ma50, extras = {}) {
   if ('1y' in mom) { const w = Math.max(-.20, Math.min(.20, mom['1y'] / 50)); ms += w; mr.push(`1-year ${mom['1y'] > 0 ? '+' : ''}${mom['1y']}%`) }
   if ('rsi' in mom) {
     const rsi = mom['rsi']
-    if (rsi < 30) { ms += .3; mr.push(`RSI ${rsi} — oversold`) }
+    const inDowntrend = (mom['6m'] || mom['3m'] || 0) < -20
+    if (rsi < 30 && !inDowntrend) { ms += .3; mr.push(`RSI ${rsi} — oversold, bounce potential`) }
+    else if (rsi < 30 && inDowntrend) { ms -= .1; mr.push(`RSI ${rsi} — oversold but ETF in downtrend (falling knife risk)`) }
     else if (rsi > 70) { ms -= .2; mr.push(`RSI ${rsi} — overbought`) }
     else mr.push(`RSI ${rsi}`)
   }
@@ -702,9 +704,10 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   const color = verdict === 'BUY' ? '#00C805' : verdict === 'HOLD' ? '#FFD700' : '#FF5000'
 
   // ── CONVICTION — independent measure, not circular ──
-  // Measures: how many factors agree × how strong the agreement is × regime clarity
-  const agreementStrength = Object.values(S).reduce((sum, v) => sum + Math.abs(v), 0) / totalFactors
-  const breadthScore = (factorsPositive - factorsNegative) / totalFactors   // -1 to +1
+  // Use only factors with real data — missing factors score 0 and dilute breadth unfairly for micro-caps
+  const activeFactorCount = Object.values(factorHasData).filter(Boolean).length || 1
+  const agreementStrength = Object.values(S).reduce((sum, v) => sum + Math.abs(v), 0) / activeFactorCount
+  const breadthScore = (factorsPositive - factorsNegative) / activeFactorCount   // -1 to +1
   const conviction = parseFloat(Math.max(0, Math.min(100,
     (breadthScore * 0.5 + 0.5) * 60 +           // factor breadth: 0-60
     agreementStrength * 25 +                      // signal strength: 0-25

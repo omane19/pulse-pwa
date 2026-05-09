@@ -325,8 +325,21 @@ export default function GlobalImpact({ onNavigate }) {
   const [movers,    setMovers]            = useState(null)
   const [macroData, setMacroData]         = useState(null)
   const [macroTab,  setMacroTab]          = useState('sectors') // sectors | calendar | yield | macro
-  // notify fn from parent or dummy
-  const notify = async () => {}
+  const [notifPerm, setNotifPerm] = React.useState(() =>
+    typeof Notification !== 'undefined' ? Notification.permission : 'denied'
+  )
+
+  const notify = async (title, body) => {
+    if (typeof Notification === 'undefined') return
+    let perm = notifPerm
+    if (perm === 'default') {
+      perm = await Notification.requestPermission()
+      setNotifPerm(perm)
+    }
+    if (perm === 'granted') {
+      new Notification(title, { body, icon: '/icons/icon-192.png' })
+    }
+  }
 
   const loadAll = useCallback(async () => {
     setLoadingPrices(true)
@@ -457,7 +470,7 @@ export default function GlobalImpact({ onNavigate }) {
               ))}
             </div>
             {macroTab === 'sectors'  && <SectorHeatmap sectorData={macroData.sectorData} onNavigate={onNavigate} />}
-            {macroTab === 'calendar' && <EconomicCalendar events={macroData.events} notify={notify} permission="denied" />}
+            {macroTab === 'calendar' && <EconomicCalendar events={macroData.events} notify={notify} permission={notifPerm} />}
             {macroTab === 'yield'    && <YieldCurveCard yieldCurve={macroData.yieldCurve} />}
             {macroTab === 'macro'    && <MacroIndicators econData={macroData.econData} />}
           </div>

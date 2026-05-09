@@ -46,8 +46,9 @@ export default function Compare() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const run = async () => {
-    const tA = ta.trim().toUpperCase(); const tB = tb.trim().toUpperCase()
+  const run = async (overrideA, overrideB) => {
+    const tA = (overrideA || ta).trim().toUpperCase()
+    const tB = (overrideB || tb).trim().toUpperCase()
     if (!tA || !tB) { setError('Enter two valid tickers.'); return }
     if (tA === tB) { setError('Enter two different tickers.'); return }
     setLoading(true); setError(null); setData([null,null])
@@ -56,7 +57,7 @@ export default function Compare() {
     setData([dA, dB]); setLoading(false)
   }
 
-  const quickSet = (x, y) => { setTa(x); setTb(y) }
+  const quickSet = (x, y) => { setTa(x); setTb(y); run(x, y) }
 
   const [a, b] = data
 
