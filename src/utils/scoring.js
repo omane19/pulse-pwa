@@ -318,6 +318,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     if (peg < 0.8)       { vs += 0.6; vr.push(`PEG ${peg.toFixed(2)} — undervalued vs growth`) }
     else if (peg < 1.2)  { vs += 0.3; vr.push(`PEG ${peg.toFixed(2)} — fairly valued`) }
     else if (peg < 2.0)  { vs -= 0.15; vr.push(`PEG ${peg.toFixed(2)} — growth premium`) }
+    else if (revenueGrowth && revenueGrowth > 40) { vs -= 0.1; vr.push(`PEG ${peg.toFixed(2)} — high but hypergrowth +${revenueGrowth.toFixed(0)}% supports premium`) }
     else                 { vs -= 0.4; vr.push(`PEG ${peg.toFixed(2)} — expensive vs growth`) }
   } else if (pe) {
     // Fallback: raw P/E with growth context
@@ -341,11 +342,17 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   if (pb > 0) { if (pb < 2) vs += .15; else if (pb > 10) vs -= .15 }
   if (roe > 15) { vs += .15; vr.push(`ROE ${roe.toFixed(1)}%`) }
 
-  // FCF per share — positive FCF is quality signal
-  if (fcf != null) {
-    if (fcf > 5)        { vs += 0.2; vr.push(`FCF/share $${fcf.toFixed(2)} — strong cash generation`) }
-    else if (fcf > 0)   { vs += 0.1; vr.push(`FCF/share $${fcf.toFixed(2)} — positive FCF`) }
-    else                { vs -= 0.2; vr.push(`Negative FCF — cash burn risk`) }
+  // FCF yield — normalized to price so a $5 FCF/share on a $100 stock scores the same as $1 on a $20 stock
+  if (fcf != null && price > 0) {
+    const fcfYield = (fcf / price) * 100
+    if (fcfYield > 8)       { vs += 0.3;  vr.push(`FCF yield ${fcfYield.toFixed(1)}% — exceptional cash generation`) }
+    else if (fcfYield > 5)  { vs += 0.2;  vr.push(`FCF yield ${fcfYield.toFixed(1)}% — strong free cash flow`) }
+    else if (fcfYield > 2)  { vs += 0.1;  vr.push(`FCF yield ${fcfYield.toFixed(1)}% — positive FCF`) }
+    else if (fcfYield > 0)  { vs += 0.05; vr.push(`FCF yield ${fcfYield.toFixed(1)}% — minimal free cash flow`) }
+    else                    { vs -= 0.2;  vr.push(`Negative FCF yield — cash burn risk`) }
+  } else if (fcf != null) {
+    if (fcf > 0) { vs += 0.1; vr.push(`FCF/share $${fcf.toFixed(2)} — positive FCF`) }
+    else         { vs -= 0.2; vr.push(`Negative FCF — cash burn risk`) }
   }
 
   // Debt/equity — balance sheet health
@@ -362,16 +369,21 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     else if (currentRatio >= 2.0){ vs += 0.1; vr.push(`Current ratio ${currentRatio.toFixed(2)} — strong liquidity`) }
   }
 
-  // Dividend yield — positive signal for value/income stocks (non-growth context)
+  // Dividend yield — check for dividend traps before rewarding yield
+  const payoutRatio = metrics?.payoutRatio ?? null
+  const isDividendTrap = payoutRatio != null && payoutRatio > 80 && (revenueGrowth == null || revenueGrowth < 5)
   if (divYield != null && divYield > 0 && (!peg || peg > 1.5)) {
-    if (divYield > 4)       { vs += 0.2; vr.push(`Dividend yield ${divYield.toFixed(1)}% — strong income signal`) }
-    else if (divYield > 2)  { vs += 0.1; vr.push(`Dividend yield ${divYield.toFixed(1)}%`) }
+    if (isDividendTrap) {
+      vs -= 0.1; vr.push(`Dividend ${divYield.toFixed(1)}% but payout ratio ${payoutRatio.toFixed(0)}% — sustainability risk`)
+    } else if (divYield > 4) { vs += 0.2; vr.push(`Dividend yield ${divYield.toFixed(1)}% — strong income signal`) }
+    else if (divYield > 2)   { vs += 0.1; vr.push(`Dividend yield ${divYield.toFixed(1)}%`) }
   }
 
   S.valuation = Math.max(-1, Math.min(1, vs)); R.valuation = vr
 
-  // Sentiment
-  const nw = news?.length || 0; const wt = Math.min(nw / 10, 1.0)  // max 1.0x to avoid over-amplification
+  // Sentiment — log-scaled weight so 30 articles doesn't dominate over 10
+  const nw = news?.length || 0
+  const wt = nw >= 10 ? Math.min(1.0 + Math.log(nw / 10) * 0.2, 1.3) : nw / 10
   const ss = Math.max(-1, Math.min(1, avgSent * 1.5 * wt))
   const lb = avgSent > .08 ? 'Bullish' : avgSent < -.08 ? 'Bearish' : 'Neutral'
   S.sentiment = ss; R.sentiment = [`Credibility-weighted ${avgSent > 0 ? '+' : ''}${avgSent} (${lb}) · ${nw} articles`]
@@ -649,7 +661,7 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     momentumNotCrashing &&          // not in a crash
     !recentEarningsMiss &&          // company didn't just miss earnings
     S.earnings >= 0 &&              // earnings factor not negative
-    S.analyst > 0                   // analysts still constructive on the business
+    S.analyst > -0.5               // analysts not outright bearish
   )
 
   // Quality Dip bonus — add to total score before verdict

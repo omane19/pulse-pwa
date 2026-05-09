@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
@@ -582,6 +582,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [smartMoney,  setSmartMoney]  = useState(null)
   const [tracked,     setTracked]     = useState(false)
   const [analystEst,  setAnalystEst]  = useState([])
+  const [unusualFlow, setUnusualFlow] = useState(null)
   const [diveTab,     setDiveTab]     = useState('overview')
 
   useEffect(() => {
@@ -597,23 +598,25 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
     setResult(r)
   }, [data, smartMoney])
 
-  // Fetch FMP smart money in background
+  // Fetch smart money — reuse data.insider (already fetched), only fetch congressional + analyst + unusual flow
   useEffect(() => {
     if (!data?.ticker || !hasKeys().fmp) return
-    setSmartMoney(null)
+    setSmartMoney(null); setUnusualFlow(null)
     Promise.all([
-      fetchFMPCongressional(data.ticker), fetchFMPInsider(data.ticker),
-      fetchAnalystEstimates(data.ticker)
-    ]).then(([cong, ins, est]) => {
-        const safeIns  = Array.isArray(ins)  ? ins  : []
+      fetchFMPCongressional(data.ticker),
+      fetchAnalystEstimates(data.ticker),
+      fetchUnusualFlow(data.ticker),
+    ]).then(([cong, est, flow]) => {
+        const safeIns  = Array.isArray(data.insider) ? data.insider : []
         const safeCong = Array.isArray(cong) ? cong : []
         const cutoff = new Date(Date.now() - 90*86400000)
         const recentInsiderBuys  = safeIns.filter(t => t.isBuy  && new Date(t.date) > cutoff).length
         const recentInsiderSells = safeIns.filter(t => !t.isBuy && new Date(t.date) > cutoff).length
         const recentCongBuys     = safeCong.filter(t => t.isBuy).length
         const cluster = computeClusterSignal(safeIns)
-        setSmartMoney({ insiderBuys: recentInsiderBuys, insiderSells: recentInsiderSells, congressBuys: recentCongBuys, cluster, rawInsider: ins, rawCongress: cong })
+        setSmartMoney({ insiderBuys: recentInsiderBuys, insiderSells: recentInsiderSells, congressBuys: recentCongBuys, cluster, rawInsider: safeIns, rawCongress: safeCong })
         if (est?.length) setAnalystEst(est)
+        if (flow?.length) setUnusualFlow(flow)
       })
       .catch(() => {})
   }, [data?.ticker])
@@ -734,6 +737,15 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               </div>
 
               <VerdictCard result={result} ticker={ticker}/>
+              {result.inBearRegime && (
+                <div style={{display:'flex',alignItems:'center',gap:8,background:'#FF500010',border:'1px solid #FF500035',borderRadius:10,padding:'10px 14px',marginBottom:10}}>
+                  <span style={{fontSize:'1rem'}}>🐻</span>
+                  <div>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',fontWeight:700,color:'#FF8060',letterSpacing:'1px'}}>BEAR REGIME ACTIVE</div>
+                    <div style={{fontSize:'0.72rem',color:'#B2B2B2',marginTop:2}}>SPY &amp; sector both below 50-day MA — scoring weighted toward trend + momentum</div>
+                  </div>
+                </div>
+              )}
               <DataQualityBadge result={result}/>
 
               <SectionHeader>Analysis Brief</SectionHeader>
@@ -823,6 +835,8 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                 <MetricCell label="Quick Ratio" value={data.metrics?.quickRatio!=null?`${data.metrics.quickRatio.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.quickRatio>=1?'pos':data.metrics?.quickRatio<0.5?'neg':'neu'}/>
                 <MetricCell label="Cash Ratio" value={data.metrics?.cashRatio!=null?`${data.metrics.cashRatio.toFixed(2)}×`:'N/A'} deltaColor={data.metrics?.cashRatio>=0.5?'pos':'neu'}/>
                 <MetricCell label="Asset Turn" value={data.metrics?.assetTurnover!=null?`${data.metrics.assetTurnover.toFixed(2)}×`:'N/A'}/>
+                <MetricCell label="Income Qual" value={data.metrics?.incomeQuality!=null?data.metrics.incomeQuality.toFixed(2):'N/A'} delta={data.metrics?.incomeQuality!=null?(data.metrics.incomeQuality>1?'✓ High':data.metrics.incomeQuality>0.5?'Mid':'⚠ Low'):''} deltaColor={data.metrics?.incomeQuality!=null?(data.metrics.incomeQuality>1?'pos':data.metrics.incomeQuality>0.5?'neu':'neg'):'neu'}/>
+                <MetricCell label="Payout %" value={data.metrics?.payoutRatio!=null?`${data.metrics.payoutRatio.toFixed(0)}%`:'N/A'} deltaColor={data.metrics?.payoutRatio!=null?(data.metrics.payoutRatio<60?'pos':data.metrics.payoutRatio>85?'neg':'neu'):'neu'}/>
               </div>
 
               {(av.forwardPE||av.targetPrice)&&(
@@ -908,6 +922,54 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                     ['Sells',String(data.insider.filter(x=>x.isBuy===false).length)],
                     ['Signal',(()=>{const b=data.insider.filter(x=>x.isBuy===true).length;const s=data.insider.filter(x=>x.isBuy===false).length;return b>s?'🟢 Bullish':s>b?'🔴 Bearish':'⚪ Neutral'})()]
                   ].map(([l,v])=><MetricCell key={l} label={l} value={v}/>)}
+                </div></>
+              )}
+
+              {unusualFlow?.length>0&&(
+                <><SectionHeader>Options Flow — Unusual Activity</SectionHeader>
+                <div style={{background:'#111',border:'1px solid #252525',borderRadius:12,padding:'14px 16px',marginBottom:14}}>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:'#B2B2B2',letterSpacing:1.5,textTransform:'uppercase',marginBottom:10}}>
+                    {unusualFlow.length} contracts with Vol/OI ≥ 2× &amp; volume ≥ 500 — sorted by ratio
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'auto 1fr auto auto auto',gap:'6px 10px',alignItems:'center',marginBottom:6}}>
+                    {['Type','Strike / Exp','Vol','OI','IV'].map(h=>(
+                      <div key={h} style={{fontFamily:'var(--font-mono)',fontSize:'0.54rem',color:'#555',textTransform:'uppercase',letterSpacing:1}}>{h}</div>
+                    ))}
+                    {unusualFlow.slice(0,10).map((c,i)=>{
+                      const isCall = c.type==='call'
+                      return(
+                        <React.Fragment key={i}>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',fontWeight:700,color:isCall?GREEN:RED}}>
+                            {isCall?'CALL':'PUT'}
+                          </div>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.66rem',color:'#fff'}}>
+                            ${c.strike} <span style={{color:'#555',fontSize:'0.58rem'}}>{String(c.expiry||'').slice(5)}</span>
+                          </div>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.66rem',color:'#B2B2B2'}}>{c.volume?.toLocaleString()}</div>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.66rem',color:'#B2B2B2'}}>{c.oi?.toLocaleString()}</div>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.66rem',color:c.iv>50?RED:c.iv>30?YELLOW:'#B2B2B2'}}>
+                            {c.iv!=null?`${c.iv}%`:'—'}
+                          </div>
+                        </React.Fragment>
+                      )
+                    })}
+                  </div>
+                  {(()=>{
+                    const calls = unusualFlow.filter(c=>c.type==='call')
+                    const puts  = unusualFlow.filter(c=>c.type==='put')
+                    const ratio = puts.length>0 ? (calls.length/puts.length).toFixed(2) : '∞'
+                    const bullish = calls.length > puts.length
+                    return(
+                      <div style={{borderTop:'1px solid #1a1a1a',paddingTop:8,marginTop:4,display:'flex',gap:16,alignItems:'center'}}>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:bullish?GREEN:RED}}>
+                          {bullish?'▲':'▼'} Call/Put ratio {ratio} — {bullish?'bullish':'bearish'} options flow
+                        </div>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#555'}}>
+                          {calls.length}C / {puts.length}P unusual
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div></>
               )}
 
