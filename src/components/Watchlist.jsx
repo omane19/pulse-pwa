@@ -13,7 +13,17 @@ const ALERTS_KEY = 'pulse_price_alerts_v1'
 function loadAlerts() { try { return JSON.parse(localStorage.getItem(ALERTS_KEY) || '{}') } catch { return {} } }
 function saveAlerts(a) { try { localStorage.setItem(ALERTS_KEY, JSON.stringify(a)) } catch {} }
 
-function ScoreBadge({ pct, verdict, fmpRating, piotroski }) {
+/* ── Watchlist metadata: add price + add date ── */
+const META_KEY = 'pulse_wl_meta_v1'
+function loadMeta() { try { return JSON.parse(localStorage.getItem(META_KEY) || '{}') } catch { return {} } }
+function saveMeta(m) { try { localStorage.setItem(META_KEY, JSON.stringify(m)) } catch {} }
+
+/* ── Score history: previous PULSE score per ticker ── */
+const SCORE_KEY = 'pulse_score_hist_v1'
+function loadScoreHist() { try { return JSON.parse(localStorage.getItem(SCORE_KEY) || '{}') } catch { return {} } }
+function saveScoreHist(h) { try { localStorage.setItem(SCORE_KEY, JSON.stringify(h)) } catch {} }
+
+function ScoreBadge({ pct, verdict, fmpRating, piotroski, delta }) {
   const color = verdict === 'BUY' ? GREEN : verdict === 'HOLD' ? YELLOW : RED
   return (
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,flexShrink:0}}>
@@ -25,6 +35,11 @@ function ScoreBadge({ pct, verdict, fmpRating, piotroski }) {
         <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.9rem', fontWeight:700, color, lineHeight:1 }}>{Math.round(pct)}</div>
         <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.48rem', color, letterSpacing:1, marginTop:2 }}>{verdict}</div>
       </div>
+      {delta != null && delta !== 0 && (
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color: delta > 0 ? GREEN : RED, lineHeight:1 }}>
+          {delta > 0 ? '↑+' : '↓'}{delta}
+        </div>
+      )}
       {fmpRating && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',padding:'1px 5px',borderRadius:3,background:'rgba(0,229,255,0.1)',color:CYAN}}>{fmpRating}</div>}
       {piotroski!=null && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',padding:'1px 5px',borderRadius:3,background:piotroski>=7?'rgba(0,200,5,0.15)':piotroski>=4?'rgba(255,215,0,0.1)':'rgba(255,80,0,0.1)',color:piotroski>=7?GREEN:piotroski>=4?YELLOW:RED}}>P:{piotroski}</div>}
     </div>
@@ -97,6 +112,8 @@ export default function Watchlist({ onNavigateToDive }) {
   const [alerts, setAlerts]   = useState(loadAlerts)
   const [alertFor, setAlertFor] = useState(null) // ticker being edited
   const [earnings, setEarnings] = useState({})   // { TICKER: ec object }
+  const [meta, setMeta] = useState(loadMeta)
+  const [scoreHist, setScoreHist] = useState(loadScoreHist)
 
   const handleAdd = () => {
     const t = input.trim().toUpperCase()
@@ -145,6 +162,24 @@ export default function Watchlist({ onNavigateToDive }) {
     const sorted = out.sort((a, b) => b.result.pct - a.result.pct)
     setResults(sorted)
     setLoading(false)
+
+    // Save addedPrice for first-time refresh; update score velocity delta
+    const currentMeta = loadMeta()
+    const newMeta = { ...currentMeta }
+    const currentHist = loadScoreHist()
+    const newHist = { ...currentHist }
+    for (const item of out) {
+      if (item.quote?.c && !newMeta[item.ticker]?.addedPrice) {
+        newMeta[item.ticker] = { ...newMeta[item.ticker], addedAt: new Date().toISOString(), addedPrice: item.quote.c }
+      }
+      if (item.result) {
+        const prev = currentHist[item.ticker]?.score
+        const cur = Math.round(item.result.pct)
+        newHist[item.ticker] = { score: cur, delta: prev != null ? cur - prev : null }
+      }
+    }
+    saveMeta(newMeta); setMeta(newMeta)
+    saveScoreHist(newHist); setScoreHist(newHist)
 
     // Check price alerts
     const currentAlerts = loadAlerts()
@@ -242,7 +277,7 @@ export default function Watchlist({ onNavigateToDive }) {
           {/* Sort controls */}
           {results.length > 1 && (
             <div style={{ display:'flex', gap:6, marginBottom:10 }}>
-              {[['score','Score ↓'],['verdict','Verdict'],['alpha','A–Z']].map(([v,l]) => (
+              {[['score','Score ↓'],['verdict','Verdict'],['alpha','A–Z'],['pnl','P&L ↓']].map(([v,l]) => (
                 <button key={v} onClick={e => { e.stopPropagation(); setSortBy(v) }}
                   style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:'0.68rem',
                     fontFamily:'var(--font-mono)', cursor:'pointer',
@@ -278,6 +313,10 @@ export default function Watchlist({ onNavigateToDive }) {
               if (sortBy === 'score')   return b.result.pct - a.result.pct
               if (sortBy === 'verdict') { const o={BUY:0,HOLD:1,AVOID:2}; return (o[a.result.verdict]??2)-(o[b.result.verdict]??2) }
               if (sortBy === 'alpha')   return a.ticker.localeCompare(b.ticker)
+              if (sortBy === 'pnl') {
+                const getPnl = x => { const m=meta[x.ticker]; const p=x.quote?.c; return (m?.addedPrice && p) ? (p-m.addedPrice)/m.addedPrice : -Infinity }
+                return getPnl(b) - getPnl(a)
+              }
               return 0
             }) : list.map(t => ({ ticker:t }))).map((item) => {
             const hasResult = !!item.result
@@ -300,7 +339,7 @@ export default function Watchlist({ onNavigateToDive }) {
                   WebkitTapHighlightColor:'transparent'
                 }}>
 
-                {hasResult && <ScoreBadge pct={r.pct} verdict={r.verdict} fmpRating={item.result?.fmpRating} piotroski={item.result?.piotroski} />}
+                {hasResult && <ScoreBadge pct={r.pct} verdict={r.verdict} fmpRating={item.result?.fmpRating} piotroski={item.result?.piotroski} delta={scoreHist[item.ticker]?.delta ?? null} />}
 
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontFamily:'var(--font-mono)', fontWeight:700, fontSize:'0.82rem', color:'#fff', display:'flex', alignItems:'center', gap:6 }}>
@@ -308,6 +347,16 @@ export default function Watchlist({ onNavigateToDive }) {
                     {hasAlert && <span style={{ fontSize:'0.6rem', color:YELLOW }}>🔔</span>}
                   </div>
                   <div style={{ fontSize:'0.68rem', color:G1, marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{name}</div>
+                  {/* P&L since added */}
+                  {price && meta[item.ticker]?.addedPrice && (() => {
+                    const m = meta[item.ticker]
+                    const pnlPct = (price - m.addedPrice) / m.addedPrice * 100
+                    return (
+                      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#888', marginTop:2 }}>
+                        Added @ ${m.addedPrice.toFixed(2)} · <span style={{ color: pnlPct >= 0 ? GREEN : RED }}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%</span>
+                      </div>
+                    )
+                  })()}
                   {/* One-line signal reason */}
                   {hasResult && (() => {
                     const scores = item.result?.scores || {}
@@ -379,7 +428,7 @@ export default function Watchlist({ onNavigateToDive }) {
                 <button
                   className="btn btn-danger"
                   style={{ padding:'6px 10px', width:'auto', fontSize:'0.7rem', flexShrink:0 }}
-                  onClick={e => { e.stopPropagation(); remove(item.ticker); setResults(prev => prev.filter(r => r.ticker !== item.ticker)) }}>✕</button>
+                  onClick={e => { e.stopPropagation(); remove(item.ticker); setResults(prev => prev.filter(r => r.ticker !== item.ticker)); const nm={...loadMeta()}; delete nm[item.ticker]; saveMeta(nm); setMeta(nm) }}>✕</button>
               </div>
             )
           })}
