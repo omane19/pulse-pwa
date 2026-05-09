@@ -4,7 +4,7 @@ import { scoreAsset } from '../utils/scoring.js'
 import { OPTIONS_STRATEGIES, TICKER_NAMES } from '../utils/constants.js'
 import { EarningsWarning, LoadingBar, SectionHeader, PullToRefresh } from './shared.jsx'
 
-const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
+const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'; const WHITE='#ffffff'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'
 
 /* ── Strike Calculator ── */
 function calcStrikes(price, verdict, rsi) {

@@ -51,8 +51,8 @@ export default function OptionsGuide() {
   const conv   = result?.conviction
   const color  = result?.color || '#B2B2B2'
 
-  const callOk  = verdict === 'BUY' && rsi && rsi < 65
-  const putOk   = verdict === 'AVOID' || (rsi && rsi > 70)
+  const callOk  = verdict === 'BUY' && (rsi == null || rsi < 65)
+  const putOk   = verdict === 'AVOID' && (rsi == null || rsi > 30)  // no puts when already oversold
   const ccOk    = verdict === 'HOLD' || verdict === 'AVOID'
 
   return (

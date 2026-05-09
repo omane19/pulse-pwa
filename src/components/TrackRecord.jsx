@@ -201,7 +201,7 @@ export default function TrackRecord() {
     return true
   })
 
-  const stats = computeStats(signals)
+  const stats = computeStats(filtered)
 
   return (
     <PullToRefresh onRefresh={load} enabled>
@@ -212,7 +212,7 @@ export default function TrackRecord() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <StatCard label="TOTAL CALLS"  value={stats.total} />
         <StatCard label="BUY WIN RATE" value={stats.winRate != null ? `${stats.winRate}%` : '—'} color={stats.winRate >= 60 ? GREEN : stats.winRate >= 45 ? YELLOW : RED} sub={`${stats.buyWins}/${stats.buyCalls} BUYs`} />
-        <StatCard label="AVG RETURN"   value={stats.avgReturn != null ? fmt(parseFloat(stats.avgReturn)) : '—'} color={parseFloat(stats.avgReturn) > 0 ? GREEN : RED} sub="on BUY calls (30d)" />
+        <StatCard label="AVG RETURN"   value={stats.avgReturn != null ? fmt(parseFloat(stats.avgReturn)) : '—'} color={(parseFloat(stats.avgReturn) || 0) > 0 ? GREEN : RED} sub="on BUY calls (30d)" />
       </div>
 
       {/* SPY Benchmark — only shows once enough signals have spy data */}
@@ -260,7 +260,7 @@ export default function TrackRecord() {
                 {stats.hypotheticalPnL >= 0 ? '+' : ''}{stats.hypotheticalPnL >= 0 ? '$' : '-$'}{Math.abs(stats.hypotheticalPnL).toLocaleString()}
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem', color: stats.hypotheticalPnL >= 0 ? GREEN : RED, fontWeight: 700 }}>
-                {stats.hypotheticalPct >= 0 ? '+' : ''}{stats.hypotheticalPct}%
+                {stats.hypotheticalPct != null ? `${stats.hypotheticalPct >= 0 ? '+' : ''}${stats.hypotheticalPct}%` : '—'}
               </div>
             </div>
             <div style={{ fontSize: '0.68rem', color: '#666', marginTop: 4 }}>

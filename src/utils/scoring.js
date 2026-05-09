@@ -339,7 +339,10 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
     }
   } else vr.push('P/E unavailable')
 
-  if (pb > 0) { if (pb < 2) vs += .15; else if (pb > 10) vs -= .15 }
+  // P/B: exclude distressed range (<0.3) where low P/B signals insolvency risk, not value
+  if (pb > 0.3 && pb < 2) { vs += .15 }
+  else if (pb > 0 && pb < 0.3) { vs -= .1; vr.push(`P/B ${pb.toFixed(2)} — extremely low, possible distress`) }
+  else if (pb > 10) { vs -= .15 }
   if (roe > 15) { vs += .15; vr.push(`ROE ${roe.toFixed(1)}%`) }
 
   // FCF yield — normalized to price so a $5 FCF/share on a $100 stock scores the same as $1 on a $20 stock
@@ -665,13 +668,14 @@ export function scoreAsset(quote, candles, ma50, metrics, news, rec, earn, smart
   )
 
   // Quality Dip bonus — add to total score before verdict
+  // In bear regime, halve the bonus: stock may be down because the whole market is down, not company-specific
   let qualityDipBonus = 0
   let qualityDipLabel = null
   if (isQualityDip) {
-    // Scale bonus by how far below highs — deeper dip on strong company = bigger opportunity
-    if (pctFromHigh52 < -40)      { qualityDipBonus = 0.22; qualityDipLabel = `Quality Dip — down ${Math.abs(pctFromHigh52).toFixed(0)}% from high, strong fundamentals` }
-    else if (pctFromHigh52 < -25) { qualityDipBonus = 0.16; qualityDipLabel = `Quality Dip — down ${Math.abs(pctFromHigh52).toFixed(0)}% from high, business intact` }
-    else                           { qualityDipBonus = 0.10; qualityDipLabel = `Quality Dip — pullback on strong business` }
+    const regimeMult = inBearRegime ? 0.5 : 1
+    if (pctFromHigh52 < -40)      { qualityDipBonus = 0.22 * regimeMult; qualityDipLabel = `Quality Dip — down ${Math.abs(pctFromHigh52).toFixed(0)}% from high, strong fundamentals${inBearRegime?' (bear regime — bonus halved)':''}` }
+    else if (pctFromHigh52 < -25) { qualityDipBonus = 0.16 * regimeMult; qualityDipLabel = `Quality Dip — down ${Math.abs(pctFromHigh52).toFixed(0)}% from high, business intact${inBearRegime?' (bear regime)':''}` }
+    else                           { qualityDipBonus = 0.10 * regimeMult; qualityDipLabel = `Quality Dip — pullback on strong business${inBearRegime?' (bear regime — bonus halved)':''}` }
   }
   const adjustedTotal = total + qualityDipBonus
 
