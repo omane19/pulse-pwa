@@ -39,12 +39,17 @@ const CTip = ({ active, payload, label }) => {
   )
 }
 
+const RECENT_KEY = 'pulse_compare_recent_v1'
+function loadRecent() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { return [] } }
+function saveRecent(pairs) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(pairs.slice(0, 5))) } catch {} }
+
 export default function Compare() {
   const [ta, setTa] = useState('')
   const [tb, setTb] = useState('')
   const [data, setData] = useState([null, null])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [recent, setRecent] = useState(loadRecent)
 
   const run = async (overrideA, overrideB) => {
     const tA = (overrideA || ta).trim().toUpperCase()
@@ -55,6 +60,11 @@ export default function Compare() {
     const [dA, dB] = await Promise.all([loadOne(tA), loadOne(tB)])
     if (!dA || !dB) { setError('Could not load one or both tickers. Check they are valid US stocks or ETFs.'); setLoading(false); return }
     setData([dA, dB]); setLoading(false)
+    // Persist to recent pairs (dedup by pair key)
+    const key = [tA, tB].sort().join('|')
+    const updated = [{ a: tA, b: tB }, ...loadRecent().filter(p => [p.a,p.b].sort().join('|') !== key)]
+    saveRecent(updated)
+    setRecent(updated)
   }
 
   const quickSet = (x, y) => { setTa(x); setTb(y); run(x, y) }
@@ -107,6 +117,17 @@ export default function Compare() {
                 onClick={()=>quickSet(x,y)}>{x} vs {y}</button>
             ))}
           </div>
+          {recent.length > 0 && (
+            <div style={{ marginTop:24 }}>
+              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#555', letterSpacing:'1.5px', marginBottom:8 }}>RECENT</div>
+              <div style={{ display:'flex', justifyContent:'center', flexWrap:'wrap', gap:6 }}>
+                {recent.map(p => (
+                  <button key={p.a+p.b} className="btn" style={{ padding:'5px 12px', width:'auto', fontSize:'0.66rem', color:CYAN, border:`1px solid ${CYAN}30`, background:`${CYAN}08` }}
+                    onClick={() => quickSet(p.a, p.b)}>{p.a} vs {p.b}</button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

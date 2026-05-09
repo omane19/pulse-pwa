@@ -270,6 +270,14 @@ export default function Portfolio({ onNavigateToDive }) {
               {loading ? 'Refreshing…' : '↻ Refresh'}
             </button>
           )}
+          {holdings.length > 0 && (
+            <button className="btn" title="Export CSV" style={{ padding:'0 12px', fontSize:'0.8rem' }} onClick={() => {
+              const rows = [['Ticker','Shares','Avg Cost','Current Price','Value','P&L $','P&L %','Day Change %']]
+              enriched.forEach(h => rows.push([h.ticker, h.shares, h.avgCost, h.currentPrice ?? '', h.currentValue != null ? h.currentValue.toFixed(2) : '', h.pnl != null ? h.pnl.toFixed(2) : '', h.pnlPct != null ? h.pnlPct.toFixed(2) : '', h.dayChange != null ? h.dayChange.toFixed(2) : '']))
+              const csv = rows.map(r => r.join(',')).join('\n')
+              const a = document.createElement('a'); a.href = 'data:text/csv,' + encodeURIComponent(csv); a.download = 'portfolio.csv'; a.click()
+            }}>⬇ CSV</button>
+          )}
         </div>
       )}
 
@@ -391,23 +399,31 @@ export default function Portfolio({ onNavigateToDive }) {
 function EditRow({ h, onSave, onCancel }) {
   const [shares, setShares] = useState(String(h.shares))
   const [cost,   setCost]   = useState(String(h.avgCost))
+  const [err,    setErr]    = useState(null)
+  const submit = () => {
+    const s = parseFloat(shares); const c = parseFloat(cost)
+    if (!s || s <= 0) { setErr('Enter valid share count'); return }
+    if (!c || c <= 0) { setErr('Enter valid cost basis'); return }
+    onSave(shares, cost)
+  }
   return (
     <div>
       <div style={{ fontSize: '0.72rem', color: '#00E5FF', marginBottom: 10, fontWeight: 700 }}>Edit {h.ticker}</div>
+      {err && <div style={{ color: RED, fontSize: '0.68rem', marginBottom: 8 }}>{err}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <div>
           <div style={{ fontSize: '0.58rem', color: '#B2B2B2', marginBottom: 4 }}>SHARES</div>
           <input className="input" style={{ fontSize: '0.82rem', padding: '8px 10px' }}
-            value={shares} onChange={e => setShares(e.target.value)} type="number" min="0" step="any" />
+            value={shares} onChange={e => { setShares(e.target.value); setErr(null) }} type="number" min="0" step="any" />
         </div>
         <div>
           <div style={{ fontSize: '0.58rem', color: '#B2B2B2', marginBottom: 4 }}>AVG COST ($)</div>
           <input className="input" style={{ fontSize: '0.82rem', padding: '8px 10px' }}
-            value={cost} onChange={e => setCost(e.target.value)} type="number" min="0" step="any" />
+            value={cost} onChange={e => { setCost(e.target.value); setErr(null) }} type="number" min="0" step="any" />
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button className="btn btn-primary" onClick={() => onSave(shares, cost)} style={{ flex: 1, padding: '7px 0', fontSize: '0.72rem' }}>Save</button>
+        <button className="btn btn-primary" onClick={submit} style={{ flex: 1, padding: '7px 0', fontSize: '0.72rem' }}>Save</button>
         <button className="btn" onClick={onCancel} style={{ flex: 1, padding: '7px 0', fontSize: '0.72rem' }}>Cancel</button>
       </div>
     </div>
