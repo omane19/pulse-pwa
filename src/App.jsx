@@ -8,6 +8,7 @@ import Macro from './components/Macro.jsx'
 import Learn from './components/Learn.jsx'
 import TrackRecord from './components/TrackRecord.jsx'
 import Portfolio from './components/Portfolio.jsx'
+import Backtest from './components/Backtest.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 
@@ -33,6 +34,9 @@ function IconTrack({ active }) {
 function IconPortfolio({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>)
 }
+function IconBacktest({ active }) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>)
+}
 
 function checkOnboarded() {
   try { return localStorage.getItem('pulse_onboarded') === '1' } catch { return false }
@@ -49,6 +53,7 @@ const TABS = [
   { id:'macro',     label:'Macro',     icon:IconMacro },
   { id:'track',     label:'Track',     icon:IconTrack },
   { id:'portfolio', label:'Portfolio', icon:IconPortfolio },
+  { id:'backtest',  label:'Backtest',  icon:IconBacktest },
 ]
 
 export default function App() {
@@ -103,6 +108,7 @@ export default function App() {
         <div style={{display: activeTab==='macro'     ? 'contents' : 'none'}}><ErrorBoundary><Macro onNavigate={navigateToDive} /></ErrorBoundary></div>
         <div style={{display: activeTab==='track'     ? 'contents' : 'none'}}><ErrorBoundary><TrackRecord /></ErrorBoundary></div>
         <div style={{display: activeTab==='portfolio' ? 'contents' : 'none'}}><ErrorBoundary><Portfolio onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
+        <div style={{display: activeTab==='backtest'  ? 'contents' : 'none'}}><ErrorBoundary><Backtest /></ErrorBoundary></div>
       </main>
 
       {/* Learn overlay */}

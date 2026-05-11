@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchRedditMentions, fetchAISummary } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
@@ -587,12 +587,15 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [analystEst,  setAnalystEst]  = useState([])
   const [unusualFlow, setUnusualFlow] = useState(null)
   const [diveTab,     setDiveTab]     = useState('overview')
+  const [redditData,  setRedditData]  = useState(null)
+  const [aiSummary,   setAiSummary]   = useState(null)
+  const [aiLoading,   setAiLoading]   = useState(false)
 
   useEffect(() => {
     if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
   }, [initialTicker, diveVersion])
 
-  useEffect(() => { setTracked(false); setDiveTab('overview') }, [ticker])
+  useEffect(() => { setTracked(false); setDiveTab('overview'); setAiSummary(null) }, [ticker])
 
   // Re-score whenever base data or smart money updates
   useEffect(() => {
@@ -623,6 +626,13 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
       })
       .catch(() => {})
   }, [data?.ticker])
+
+  // Reddit sentiment — Apewisdom (no key, public API)
+  useEffect(() => {
+    if (!ticker) return
+    setRedditData(null)
+    fetchRedditMentions(ticker).then(d => setRedditData(d !== undefined ? d : null))
+  }, [ticker])
 
   const handleAnalyze=()=>{ const t=input.trim().toUpperCase(); if(!t)return; setTicker(t); fetch(t) }
   const handleRefresh = useCallback(async () => { if(ticker) { await fetch(ticker) } }, [ticker, fetch])
@@ -799,6 +809,42 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               <SectionHeader>Analysis Brief</SectionHeader>
               <AnalysisBrief ticker={ticker} company={data.profile?.name||ticker} sector={data.profile?.finnhubIndustry||''} price={price} result={result} ma50={ma50} metrics={mt} news={data.news} rec={data.rec} earn={data.earnings} insider={data.insider||[]}/>
 
+              {/* AI Brief — user-triggered, needs ANTHROPIC_KEY in Vercel */}
+              <div style={{marginBottom:14}}>
+                {!aiSummary && !aiLoading && (
+                  <button className="btn btn-ghost" style={{width:'100%',fontSize:'0.74rem',padding:'10px 0',borderStyle:'dashed',borderColor:'rgba(0,229,255,0.2)',color:'#555'}}
+                    onClick={async()=>{
+                      setAiLoading(true)
+                      const headlines=(data.news||[]).slice(0,3).map(n=>n.title).filter(Boolean)
+                      const s=await fetchAISummary(ticker,{
+                        company: data.profile?.name||ticker,
+                        score:   result?.pct!=null?Math.round(result.pct):null,
+                        verdict: result?.verdict||'',
+                        sector:  data.profile?.finnhubIndustry||'',
+                        pe:      result?.pe!=null?result.pe.toFixed(1):null,
+                        growth:  mt.revenueGrowthYoY!=null?mt.revenueGrowthYoY.toFixed(1):null,
+                        headlines,
+                      })
+                      setAiSummary(s||'AI summary unavailable — check ANTHROPIC_KEY is set in Vercel.')
+                      setAiLoading(false)
+                    }}>
+                    ✨ Get AI Brief
+                  </button>
+                )}
+                {aiLoading&&(
+                  <div style={{padding:'12px 16px',background:'rgba(0,229,255,0.04)',border:'1px solid rgba(0,229,255,0.15)',borderRadius:10,fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555',textAlign:'center'}}>
+                    ✨ Generating AI brief…
+                  </div>
+                )}
+                {aiSummary&&(
+                  <div style={{padding:'14px 16px',background:'rgba(0,229,255,0.05)',border:'1px solid rgba(0,229,255,0.2)',borderRadius:10}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:CYAN,letterSpacing:1,marginBottom:8}}>✨ AI BRIEF · claude haiku</div>
+                    <div style={{fontSize:'0.84rem',color:'#e0e0e0',lineHeight:1.9}}>{aiSummary}</div>
+                    <button onClick={()=>setAiSummary(null)} style={{marginTop:8,background:'transparent',border:'none',color:'#444',fontFamily:'var(--font-mono)',fontSize:'0.58rem',cursor:'pointer',padding:0}}>✕ dismiss</button>
+                  </div>
+                )}
+              </div>
+
               <SectionHeader>Position Sizing</SectionHeader>
               <PositionSizing verdict={result.verdict} price={price}/>
 
@@ -943,25 +989,54 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                 </div></>
               )}
 
-              {data.earnings?.length>0&&(
-                <><SectionHeader>Earnings History</SectionHeader>
-                {data.earnings.slice(0,4).map((eq,i)=>{
-                  const surp=eq.actual&&eq.estimate?((eq.actual-eq.estimate)/Math.abs(eq.estimate)*100):null
-                  const beat=surp&&surp>0
-                  return(<div className="card" key={i} style={{padding:'12px 16px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <div>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.8rem'}}>{eq.period||String(eq.date??'').slice(0,7)||`Q${i+1}`}</div>
-                        <div style={{fontSize:'0.73rem',color:'#B2B2B2',marginTop:2}}>Est ${eq.estimate?.toFixed(2)??'—'} · Actual ${eq.actual!=null?eq.actual.toFixed(2):'Pending'}</div>
+              {data.earnings?.length>0&&(()=>{
+                const withEst=data.earnings.filter(q=>q.estimate!=null&&q.actual!=null)
+                const beats=withEst.filter(q=>q.actual>q.estimate)
+                const beatRate=withEst.length?Math.round(beats.length/withEst.length*100):null
+                const avgSurp=withEst.length?withEst.reduce((s,q)=>s+(q.actual-q.estimate)/Math.abs(q.estimate)*100,0)/withEst.length:null
+                let streak=0
+                for(const q of withEst){if(q.actual>q.estimate)streak++;else break}
+                return(
+                  <><SectionHeader>Earnings Playbook</SectionHeader>
+                  {withEst.length>0&&(
+                    <div className="card" style={{padding:'12px 16px',marginBottom:8}}>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:8}}>
+                        {[
+                          ['Beat Rate',`${beats.length}/${withEst.length}`,beatRate>=75?GREEN:beatRate>=50?YELLOW:RED],
+                          ['Avg Surprise',avgSurp!=null?`${avgSurp>0?'+':''}${avgSurp.toFixed(1)}%`:'—',avgSurp!=null&&avgSurp>0?GREEN:RED],
+                          ['Beat Streak',streak>0?`${streak}Q in a row`:'Broken',streak>=3?GREEN:streak>=1?YELLOW:RED],
+                        ].map(([l,v,c])=>(
+                          <div key={l} style={{textAlign:'center',background:'rgba(255,255,255,0.03)',borderRadius:8,padding:'8px 4px'}}>
+                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.52rem',color:'#888',marginBottom:4,letterSpacing:0.5}}>{l}</div>
+                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.76rem',color:c,fontWeight:700}}>{v}</div>
+                          </div>
+                        ))}
                       </div>
-                      <div style={{textAlign:'right'}}>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.86rem',color:beat?GREEN:surp?RED:'#B2B2B2'}}>{surp?`${surp>0?'+':''}${surp.toFixed(1)}%`:'—'}</div>
-                        <div style={{fontSize:'0.7rem',color:'#B2B2B2'}}>{beat?'✅ Beat':surp?'❌ Miss':'—'}</div>
+                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#555',textAlign:'center'}}>
+                        {beatRate>=75?`Strong beat history — ${ticker} consistently surprises to the upside`
+                         :beatRate>=50?`Mixed earnings track record — beat/miss roughly even`
+                         :`Below-par earnings history — ${ticker} tends to miss estimates`}
                       </div>
                     </div>
-                  </div>)
-                })}</>
-              )}
+                  )}
+                  {data.earnings.slice(0,6).map((eq,i)=>{
+                    const surp=eq.actual&&eq.estimate?((eq.actual-eq.estimate)/Math.abs(eq.estimate)*100):null
+                    const beat=surp&&surp>0
+                    return(<div className="card" key={i} style={{padding:'12px 16px'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <div>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.8rem'}}>{eq.period||String(eq.date??'').slice(0,7)||`Q${i+1}`}</div>
+                          <div style={{fontSize:'0.73rem',color:'#B2B2B2',marginTop:2}}>Est ${eq.estimate?.toFixed(2)??'—'} · Actual ${eq.actual!=null?eq.actual.toFixed(2):'Pending'}</div>
+                        </div>
+                        <div style={{textAlign:'right'}}>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.86rem',color:beat?GREEN:surp?RED:'#B2B2B2'}}>{surp?`${surp>0?'+':''}${surp.toFixed(1)}%`:'—'}</div>
+                          <div style={{fontSize:'0.7rem',color:'#B2B2B2'}}>{beat?'✅ Beat':surp?'❌ Miss':'—'}</div>
+                        </div>
+                      </div>
+                    </div>)
+                  })}</>
+                )
+              })()}
 
               {data.insider?.length>0&&(
                 <><SectionHeader>Insider Transactions — 90 Days</SectionHeader>
@@ -1159,6 +1234,41 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           {/* ── NEWS TAB ── */}
           {diveTab==='news'&&(
             <>
+              {/* Reddit Sentiment */}
+              <SectionHeader>Reddit Sentiment · r/wallstreetbets &amp; r/stocks</SectionHeader>
+              {redditData ? (
+                <div className="card" style={{padding:'14px 16px',marginBottom:10}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
+                    {[
+                      ['Rank', `#${redditData.rank}`, redditData.rank<=10?GREEN:redditData.rank<=25?YELLOW:'#B2B2B2'],
+                      ['Mentions Today', String(redditData.mentions), CYAN],
+                      ['vs Yesterday', redditData.mentions24h!=null?`${redditData.mentions>=redditData.mentions24h?'+':''}${redditData.mentions-redditData.mentions24h}`:'—',
+                        redditData.mentions24h!=null&&redditData.mentions>redditData.mentions24h?GREEN:redditData.mentions24h!=null&&redditData.mentions<redditData.mentions24h?RED:'#888'],
+                    ].map(([l,v,c])=>(
+                      <div key={l} style={{textAlign:'center',background:'rgba(255,255,255,0.03)',borderRadius:8,padding:'8px 4px'}}>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.52rem',color:'#888',marginBottom:4,letterSpacing:0.5}}>{l}</div>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.86rem',color:c,fontWeight:700}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {redditData.rankPrev!=null&&(
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#888',textAlign:'center'}}>
+                      {redditData.rank < redditData.rankPrev
+                        ? `▲ Moved up from #${redditData.rankPrev} — rising retail interest`
+                        : redditData.rank > redditData.rankPrev
+                        ? `▼ Dropped from #${redditData.rankPrev} — fading retail attention`
+                        : `Steady at #${redditData.rank}`}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="card" style={{padding:'12px 16px',marginBottom:10}}>
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555',textAlign:'center'}}>
+                    {ticker} — not in top 100 Reddit mentions today
+                  </div>
+                </div>
+              )}
+
               <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>
               <div className="card" style={{padding:'0 16px'}}>
                 {data.news?.length

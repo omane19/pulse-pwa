@@ -1303,6 +1303,107 @@ export async function fetchTickerSearch(query) {
   return local
 }
 
+/* ── Market News — multi-ticker news feed for News Impact view ── */
+export async function fetchMarketNews(watchlistTickers = []) {
+  const CORE = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'JPM', 'SPY', 'BRK.B']
+  const tickers = [...new Set([...CORE, ...watchlistTickers.slice(0, 10)])].slice(0, 15)
+  const symbols = tickers.join(',')
+  const d = await fmp(`/news/stock?symbols=${symbols}&limit=60`, 120000)
+  if (!Array.isArray(d)) return []
+  const seen = new Set()
+  return d
+    .filter(a => a.title && !seen.has(a.title) && seen.add(a.title))
+    .map(a => ({
+      title:  a.title,
+      body:   (a.text || '').slice(0, 400),
+      link:   a.url || '#',
+      source: a.site || 'Unknown',
+      ts:     a.publishedDate ? new Date(a.publishedDate).getTime() / 1000 : 0,
+      ticker: a.symbol || '',
+    }))
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 40)
+}
+
+/* ── AI Summary — calls /api/ai serverless function ── */
+export async function fetchAISummary(ticker, payload) {
+  try {
+    const r = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker, ...payload }),
+    })
+    if (!r.ok) return null
+    const d = await r.json()
+    return d.summary || null
+  } catch { return null }
+}
+
+/* ── Backtest — full historical EOD prices for a given date range ── */
+export async function fetchBacktestData(ticker, fromDate) {
+  // fromDate: ISO string like '2020-01-01'
+  const path = `/historical-price-eod/full?symbol=${ticker}&from=${fromDate}`
+  const d = await fmp(path, 3600000)  // 1-hour cache for historical data
+  const hist = Array.isArray(d) ? d : (d?.historical || [])
+  if (!hist.length) return []
+  // Sort chronologically (oldest first)
+  return [...hist]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .map(c => ({ date: c.date, close: c.close, volume: c.volume || 0 }))
+}
+
+/* ── Reddit Sentiment — Apewisdom public API (no key needed) ── */
+export async function fetchRedditMentions(ticker) {
+  const key = `reddit_${ticker}`
+  const hit = cGet(key, 600000)  // 10-min cache
+  if (hit !== null) return hit
+
+  try {
+    // Fetch top 100 stocks in parallel (4 pages × 25)
+    const pages = await Promise.all(
+      [1, 2, 3, 4].map(p =>
+        fetch(`https://apewisdom.io/api/v1.0/filter/all-stocks/page/${p}`)
+          .then(r => (r.ok ? r.json() : null))
+          .catch(() => null)
+      )
+    )
+    const all = pages.flatMap(d => d?.results || [])
+    const match = all.find(s => s.ticker === ticker)
+    const result = match
+      ? {
+          rank:         match.rank,
+          mentions:     match.mentions,
+          mentions24h:  match.mentions_24h_ago,
+          upvotes:      match.upvotes,
+          rankPrev:     match.rank_24h_ago,
+        }
+      : null
+    cSet(key, result)
+    return result
+  } catch {
+    return null
+  }
+}
+
+/* ── Reddit Top Stocks — top 50 by mentions ── */
+export async function fetchRedditTopStocks() {
+  const key = 'reddit_top'
+  const hit = cGet(key, 600000)
+  if (hit !== null) return hit
+  try {
+    const pages = await Promise.all(
+      [1, 2].map(p =>
+        fetch(`https://apewisdom.io/api/v1.0/filter/all-stocks/page/${p}`)
+          .then(r => (r.ok ? r.json() : null))
+          .catch(() => null)
+      )
+    )
+    const result = pages.flatMap(d => d?.results || [])
+    cSet(key, result)
+    return result
+  } catch { return [] }
+}
+
 /* ── React hook ── */
 export function useTickerData() {
   const [data,    setData]    = useState(null)
