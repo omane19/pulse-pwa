@@ -333,11 +333,25 @@ export async function fetchMetrics(ticker) {
 /* ══════════════════════════════════════════
    NEWS — FMP /stable/stock-news primary
 ══════════════════════════════════════════ */
+// Tickers that are also common English words/abbreviations — exclude from auto-extraction
+// to avoid false positives (e.g. "AI" in every tech article, "IT" in every business article)
+const WORD_TICKER_BLOCKLIST = new Set([
+  'A','AI','AM','AN','ARE','AS','AT','BE','BY','CO','CAN','DAY','DO','DUE',
+  'EV','EVA','FOR','GO','HAS','HE','HI','ID','IF','IN','IO','IS','IT','ITS',
+  'LA','LET','LI','LO','ME','MY','NET','NO','OF','OK','ON','OR','OUT','OWN',
+  'PA','PRO','RE','SO','THE','TO','TOO','TOP','TWO','UP','US','VIA','WE',
+  'WHO','WHY','YES','YET','YOU',
+])
+
 /* Extract ticker symbols mentioned in article text, cross-referenced against TICKER_NAMES */
 function extractMentionedTickers(text, primaryTicker) {
-  const matches = (text || '').match(/\b[A-Z]{1,5}\b/g) || []
+  const matches = (text || '').match(/\b[A-Z]{2,5}\b/g) || []
   return [...new Set(matches)]
-    .filter(t => t !== primaryTicker && TICKER_NAMES[t])
+    .filter(t =>
+      t !== primaryTicker &&
+      TICKER_NAMES[t] &&
+      !WORD_TICKER_BLOCKLIST.has(t)
+    )
     .slice(0, 5)
 }
 
