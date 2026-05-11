@@ -1289,34 +1289,27 @@ export const MACRO_SECTIONS = {
 }
 
 export async function fetchMacroTicker() {
+  // Use the same single-symbol fmp() call that fetchQuote uses — known to work.
+  // All fetches run in parallel; each is cached 5 min so repeat renders are instant.
   const allSymbols = [...new Set(
     Object.values(MACRO_SECTIONS).flatMap(sec => sec.items.map(i => i.s))
   )]
-  // Separate ETF/stocks from crypto — different FMP endpoints, fetch in parallel
-  // so a crypto failure doesn't wipe out equity data
-  const etfSymbols    = allSymbols.filter(s => !s.endsWith('USD'))
-  const cryptoSymbols = allSymbols.filter(s => s.endsWith('USD'))
 
-  const [etfData, cryptoData] = await Promise.all([
-    fmpv3(`/quote/${etfSymbols.join(',')}`, 300000),
-    fmpv3(`/quote/${cryptoSymbols.join(',')}`, 300000).catch(() => null),
-  ])
+  const results = await Promise.all(
+    allSymbols.map(s => fmp(`/quote?symbol=${s}`, 300000))
+  )
 
   const map = {}
-  const absorb = arr => {
-    if (!Array.isArray(arr)) return
-    arr.forEach(q => {
-      if (q.symbol && q.price != null) {
-        map[q.symbol] = {
-          price:     q.price,
-          changePct: q.changesPercentage ?? q.changePercentage ?? 0,
-          change:    q.change ?? 0,
-        }
+  results.forEach((d, idx) => {
+    const q = Array.isArray(d) ? d[0] : d
+    if (q?.price != null) {
+      map[allSymbols[idx]] = {
+        price:     q.price,
+        changePct: q.changesPercentage ?? q.changePercentage ?? 0,
+        change:    q.change ?? 0,
       }
-    })
-  }
-  absorb(etfData)
-  absorb(cryptoData)
+    }
+  })
   return map
 }
 

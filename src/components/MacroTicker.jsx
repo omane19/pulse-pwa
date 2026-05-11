@@ -10,7 +10,6 @@ function fmtPrice(p) {
   if (p == null) return '—'
   if (p >= 10000) return '$' + p.toLocaleString('en-US', { maximumFractionDigits: 0 })
   if (p >= 1000)  return '$' + p.toLocaleString('en-US', { maximumFractionDigits: 0 })
-  if (p >= 100)   return '$' + p.toFixed(2)
   if (p >= 1)     return '$' + p.toFixed(2)
   return '$' + p.toFixed(4)
 }
@@ -22,7 +21,8 @@ function fmtPct(p) {
 }
 
 export default function MacroTicker() {
-  const [active, setActive] = useState('markets')
+  // US Markets open by default, others closed
+  const [open, setOpen] = useState({ markets: true, crypto: false, commodities: false })
   const [quotes, setQuotes] = useState({})
   const [loading, setLoading] = useState(true)
 
@@ -37,99 +37,111 @@ export default function MacroTicker() {
     return () => { cancelled = true; clearInterval(id) }
   }, [])
 
-  const section = MACRO_SECTIONS[active]
+  const toggle = key => setOpen(prev => ({ ...prev, [key]: !prev[key] }))
 
   return (
-    <div style={{
-      background: '#080808',
-      borderBottom: '1px solid #1c1c1c',
-      userSelect: 'none',
-    }}>
-      {/* Category tabs */}
-      <div style={{
-        display: 'flex',
-        overflowX: 'auto',
-        scrollbarWidth: 'none',
-        WebkitOverflowScrolling: 'touch',
-        borderBottom: '1px solid #141414',
-      }}>
-        {Object.entries(MACRO_SECTIONS).map(([key, sec]) => (
-          <button
-            key={key}
-            onClick={() => setActive(key)}
-            style={{
-              flexShrink: 0,
-              padding: '6px 14px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '0.6rem',
-              letterSpacing: '0.5px',
-              fontWeight: active === key ? 700 : 400,
-              cursor: 'pointer',
-              background: 'transparent',
-              border: 'none',
-              color: active === key ? CYAN : '#555',
-              borderBottom: active === key ? `2px solid ${CYAN}` : '2px solid transparent',
-              transition: 'color 0.12s',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            {sec.label}
-          </button>
-        ))}
-        {/* Refresh timestamp hint */}
-        <div style={{
-          flexShrink: 0, marginLeft: 'auto', padding: '6px 12px',
-          fontFamily: 'var(--font-mono)', fontSize: '0.52rem', color: '#333',
-          display: 'flex', alignItems: 'center',
-        }}>
-          {loading ? '…' : '↻ 5m'}
-        </div>
-      </div>
+    <div style={{ background: '#080808', borderBottom: '1px solid #1e1e1e' }}>
+      {Object.entries(MACRO_SECTIONS).map(([key, sec], idx) => {
+        const isOpen = open[key]
+        const isLast = idx === Object.keys(MACRO_SECTIONS).length - 1
 
-      {/* Scrollable items row */}
-      <div style={{
-        display: 'flex',
-        overflowX: 'auto',
-        scrollbarWidth: 'none',
-        WebkitOverflowScrolling: 'touch',
-        gap: 0,
-      }}>
-        {section.items.map(({ s, l }) => {
-          const q   = quotes[s]
-          const pct = q?.changePct ?? null
-          const clr = pct == null ? G1 : pct > 0 ? GREEN : pct < 0 ? RED : G1
-          return (
+        return (
+          <div key={key}>
+            {/* Row header — always visible, tap to expand/collapse */}
             <div
-              key={s}
+              onClick={() => toggle(key)}
               style={{
-                flexShrink: 0,
-                padding: '7px 12px 8px',
-                borderRight: '1px solid #141414',
-                minWidth: 90,
+                display: 'flex',
+                alignItems: 'center',
+                padding: '6px 14px',
+                cursor: 'pointer',
+                borderBottom: `1px solid ${isOpen ? '#1a1a1a' : (isLast && !isOpen ? 'none' : '#141414')}`,
+                WebkitTapHighlightColor: 'transparent',
+                userSelect: 'none',
               }}
             >
-              <div style={{
-                fontFamily: 'var(--font-mono)', fontSize: '0.56rem',
-                color: '#666', marginBottom: 2, whiteSpace: 'nowrap',
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.6rem',
+                fontWeight: 600,
+                letterSpacing: '0.5px',
+                color: isOpen ? CYAN : '#555',
+                flex: 1,
+                transition: 'color 0.15s',
               }}>
-                {l}
-              </div>
-              <div style={{
-                fontFamily: 'var(--font-mono)', fontSize: '0.74rem',
-                color: '#fff', fontWeight: 600, lineHeight: 1.2,
+                {sec.label}
+              </span>
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.52rem',
+                color: isOpen ? CYAN : '#444',
+                transition: 'color 0.15s',
               }}>
-                {loading ? <span style={{ color:'#333' }}>———</span> : fmtPrice(q?.price)}
-              </div>
-              <div style={{
-                fontFamily: 'var(--font-mono)', fontSize: '0.58rem',
-                color: clr, marginTop: 1,
-              }}>
-                {loading ? '' : pct != null ? fmtPct(pct) : '—'}
-              </div>
+                {isOpen ? '▾' : '▸'}
+              </span>
             </div>
-          )
-        })}
-      </div>
+
+            {/* Row content — shown when expanded */}
+            {isOpen && (
+              <div style={{
+                display: 'flex',
+                overflowX: 'auto',
+                scrollbarWidth: 'none',
+                WebkitOverflowScrolling: 'touch',
+                borderBottom: isLast ? 'none' : '1px solid #141414',
+              }}>
+                {sec.items.map(({ s, l }) => {
+                  const q   = quotes[s]
+                  const pct = q?.changePct ?? null
+                  const clr = pct == null ? G1 : pct > 0 ? GREEN : pct < 0 ? RED : G1
+
+                  return (
+                    <div
+                      key={s}
+                      style={{
+                        flexShrink: 0,
+                        padding: '6px 12px 8px',
+                        borderRight: '1px solid #141414',
+                        minWidth: 82,
+                      }}
+                    >
+                      <div style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.54rem',
+                        color: '#555',
+                        marginBottom: 2,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {l}
+                      </div>
+                      <div style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.72rem',
+                        color: '#ddd',
+                        fontWeight: 600,
+                        lineHeight: 1.2,
+                      }}>
+                        {loading
+                          ? <span style={{ color: '#222' }}>———</span>
+                          : fmtPrice(q?.price)
+                        }
+                      </div>
+                      <div style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.58rem',
+                        color: clr,
+                        marginTop: 1,
+                      }}>
+                        {loading ? '' : pct != null ? fmtPct(pct) : '—'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
