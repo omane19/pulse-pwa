@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     growth != null ? `Revenue growth: ${growth > 0 ? '+' : ''}${growth}%.` : '',
     maxDD  != null ? `Max drawdown: ${maxDD}%.`         : '',
     `Recent news: ${newsLine}.`,
-    `Be direct and specific. No disclaimers. No "I" or "we".`,
+    `Rules: plain prose only, no markdown, no # headings, no bold, no bullet points, no disclaimers. Output exactly 2 plain sentences.`,
   ].filter(Boolean).join(' ')
 
   try {

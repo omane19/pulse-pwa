@@ -41,17 +41,35 @@ export function MetricCell({ label, value, delta, deltaColor }) {
   )
 }
 
-export function NewsCard({ article, sc }) {
+export function NewsCard({ article, sc, onTickerClick }) {
   const { label, badge } = timeAgo(article.ts)
   const tier = sc?.tier || 4
   const tierInfo = SOURCE_TIERS[tier]
   const summary = smartSummary(article.title, article.body)
   const tierCls = `tier-badge t${tier}`
   const timeCls = `time-${badge}`
+  const tickers = article.tickers || []
   return (
     <div className="news-card">
       <div className="news-title">{article.title}</div>
       {summary && <div className="news-summary">{summary}</div>}
+      {tickers.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, margin: '6px 0 4px' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', color: '#555', alignSelf: 'center' }}>Also affects:</span>
+          {tickers.map(t => (
+            <button key={t}
+              onClick={() => onTickerClick && onTickerClick(t)}
+              style={{
+                background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.22)',
+                borderRadius: 4, color: '#00E5FF', fontFamily: 'var(--font-mono)',
+                fontSize: '0.58rem', fontWeight: 700, padding: '2px 7px',
+                cursor: onTickerClick ? 'pointer' : 'default', letterSpacing: 0.5,
+              }}>
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="news-meta">
         <span>{article.source}</span>
         <span className={timeCls}>{badge === 'live' ? '🔴 LIVE' : badge === 'breaking' ? 'BREAKING' : label}</span>

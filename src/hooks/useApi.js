@@ -333,15 +333,31 @@ export async function fetchMetrics(ticker) {
 /* ══════════════════════════════════════════
    NEWS — FMP /stable/stock-news primary
 ══════════════════════════════════════════ */
+/* Extract ticker symbols mentioned in article text, cross-referenced against TICKER_NAMES */
+function extractMentionedTickers(text, primaryTicker) {
+  const matches = (text || '').match(/\b[A-Z]{1,5}\b/g) || []
+  return [...new Set(matches)]
+    .filter(t => t !== primaryTicker && TICKER_NAMES[t])
+    .slice(0, 5)
+}
+
 export async function fetchNews(ticker, days = 10) {
   if (hasKeys().fmp) {
     const d = await fmp(`/news/stock?symbols=${ticker}&limit=30`, 120000)
     if (Array.isArray(d) && d.length) {
-      return d.slice(0, 30).filter(a => a.title).map(a => ({
-        title: a.title, body: (a.text || '').slice(0, 700),
-        link: a.url || '#', source: a.site || 'Unknown',
-        ts: a.publishedDate ? new Date(a.publishedDate).getTime() / 1000 : 0
-      }))
+      return d.slice(0, 30).filter(a => a.title).map(a => {
+        // FMP may return symbols array directly; fall back to text extraction
+        const apiTickers = Array.isArray(a.symbols) ? a.symbols.filter(t => t !== ticker) : []
+        const extracted  = apiTickers.length ? apiTickers : extractMentionedTickers(a.title + ' ' + (a.text || ''), ticker)
+        return {
+          title:   a.title,
+          body:    (a.text || '').slice(0, 700),
+          link:    a.url || '#',
+          source:  a.site || 'Unknown',
+          ts:      a.publishedDate ? new Date(a.publishedDate).getTime() / 1000 : 0,
+          tickers: extracted,
+        }
+      })
     }
   }
   const from = new Date(Date.now() - days * 86400000).toISOString().split('T')[0]
@@ -349,8 +365,12 @@ export async function fetchNews(ticker, days = 10) {
   const d    = await fh(`/company-news?symbol=${ticker}&from=${from}&to=${to}`, 60000)
   if (!Array.isArray(d)) return []
   return d.slice(0, 30).filter(a => a.headline).map(a => ({
-    title: a.headline, body: (a.summary || '').slice(0, 700),
-    link: a.url || '#', source: a.source || 'Unknown', ts: a.datetime || 0
+    title:   a.headline,
+    body:    (a.summary || '').slice(0, 700),
+    link:    a.url || '#',
+    source:  a.source || 'Unknown',
+    ts:      a.datetime || 0,
+    tickers: extractMentionedTickers(a.headline + ' ' + (a.summary || ''), ticker),
   }))
 }
 

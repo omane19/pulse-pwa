@@ -1272,7 +1272,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>
               <div className="card" style={{padding:'0 16px'}}>
                 {data.news?.length
-                  ?data.news.map((art,i)=><NewsCard key={i} article={art} sc={result.scoredNews?.[i]||{tier:4}}/>)
+                  ?data.news.map((art,i)=><NewsCard key={i} article={art} sc={result.scoredNews?.[i]||{tier:4}} onTickerClick={t=>{onNavigate&&onNavigate(t)}}/>)
                   :<div style={{color:'#B2B2B2',textAlign:'center',padding:24,fontSize:'0.84rem'}}>No news in past 10 days.</div>}
               </div>
               <div style={{height:16}}/>
