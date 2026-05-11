@@ -587,9 +587,10 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [analystEst,  setAnalystEst]  = useState([])
   const [unusualFlow, setUnusualFlow] = useState(null)
   const [diveTab,     setDiveTab]     = useState('overview')
-  const [redditData,  setRedditData]  = useState(null)
-  const [aiSummary,   setAiSummary]   = useState(null)
-  const [aiLoading,   setAiLoading]   = useState(false)
+  const [redditData,    setRedditData]    = useState(null)
+  const [redditLoading, setRedditLoading] = useState(false)
+  const [aiSummary,     setAiSummary]     = useState(null)
+  const [aiLoading,     setAiLoading]     = useState(false)
 
   useEffect(() => {
     if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
@@ -630,8 +631,10 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   // Reddit sentiment — Apewisdom (no key, public API)
   useEffect(() => {
     if (!ticker) return
-    setRedditData(null)
-    fetchRedditMentions(ticker).then(d => setRedditData(d !== undefined ? d : null))
+    setRedditData(null); setRedditLoading(true)
+    fetchRedditMentions(ticker)
+      .then(d => setRedditData(d || null))
+      .finally(() => setRedditLoading(false))
   }, [ticker])
 
   const handleAnalyze=()=>{ const t=input.trim().toUpperCase(); if(!t)return; setTicker(t); fetch(t) }
@@ -1303,38 +1306,61 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                   interpretation = `${ticker} has low Reddit visibility (rank #${redditData.rank}). Limited retail crowding — price action is driven by institutional positioning, earnings, or macro. Less pump risk, more fundamental-driven.`
                 }
 
+                const sourceNote = (
+                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.54rem',color:'#444',paddingTop:8,borderTop:'1px solid #1a1a1a'}}>
+                    Source: Apewisdom · r/wallstreetbets, r/stocks, r/investing, r/options · updates hourly
+                  </div>
+                )
+
+                // Loading
+                if (redditLoading) return (
+                  <div className="card" style={{padding:'14px 16px',marginBottom:10,textAlign:'center'}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555'}}>Checking Reddit sentiment…</div>
+                  </div>
+                )
+
+                // Not trending — clean minimal card, no dashes
+                if (!redditData) return (
+                  <div className="card" style={{padding:'14px 16px',marginBottom:10}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',fontWeight:700,color:'#555',background:'rgba(255,255,255,0.04)',border:'1px solid #252525',borderRadius:8,padding:'6px 12px'}}>
+                        Not trending
+                      </div>
+                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.64rem',color:'#555'}}>{ticker} · not in top 100</div>
+                    </div>
+                    <div style={{fontSize:'0.78rem',color:'#B2B2B2',lineHeight:1.8,marginBottom:10}}>{interpretation}</div>
+                    {sourceNote}
+                  </div>
+                )
+
+                // Trending — full card with rank badge + stats
                 return(
                   <div className="card" style={{padding:'14px 16px',marginBottom:10}}>
-                    {/* Top row: rank badge + stats */}
                     <div style={{display:'flex',gap:12,alignItems:'stretch',marginBottom:12}}>
                       {/* Rank badge */}
-                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',width:64,flexShrink:0,background:'rgba(255,255,255,0.03)',borderRadius:10,padding:'10px 4px',border:`1px solid ${rankColor}30`}}>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.48rem',color:'#555',marginBottom:4,letterSpacing:1}}>RANK</div>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:redditData?'1.5rem':'0.9rem',fontWeight:900,color:rankColor,lineHeight:1}}>
-                          {redditData?`#${redditData.rank}`:'—'}
-                        </div>
-                        {redditData&&redditData.rank<=10&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#FFD700',marginTop:3}}>TOP 10</div>}
-                        {redditData&&redditData.rank>10&&redditData.rank<=25&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#C0C0C0',marginTop:3}}>TOP 25</div>}
-                        {redditData&&redditData.rank>25&&redditData.rank<=50&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#CD7F32',marginTop:3}}>TOP 50</div>}
+                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',width:64,flexShrink:0,background:'rgba(255,255,255,0.03)',borderRadius:10,padding:'10px 4px',border:`1px solid ${rankColor}40`}}>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#555',marginBottom:4,letterSpacing:1}}>RANK</div>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'1.5rem',fontWeight:900,color:rankColor,lineHeight:1}}>{`#${redditData.rank}`}</div>
+                        {redditData.rank<=10&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#FFD700',marginTop:3}}>TOP 10</div>}
+                        {redditData.rank>10&&redditData.rank<=25&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#C0C0C0',marginTop:3}}>TOP 25</div>}
+                        {redditData.rank>25&&redditData.rank<=50&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#CD7F32',marginTop:3}}>TOP 50</div>}
                       </div>
-                      {/* Stats grid */}
+                      {/* Stats */}
                       <div style={{flex:1,display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
                         {[
-                          ['Mentions', redditData?String(redditData.mentions):'—', CYAN],
+                          ['Mentions', String(redditData.mentions), CYAN],
                           ['24h Change', mentionDelta!=null?`${mentionDelta>=0?'+':''}${mentionDelta}${mentionGrowth!=null?` (${mentionGrowth>=0?'+':''}${mentionGrowth}%)`:''}`:'—', mentionDelta!=null&&mentionDelta>0?GREEN:mentionDelta!=null&&mentionDelta<0?RED:'#888'],
-                          ['Engagement', engagement?`${engagement}x`:'—', engColor],
+                          ['Engagement', engagement?`${engagement}x upvotes/mention`:'—', engColor],
                           ['Quality', engLabel||'—', engColor],
                         ].map(([l,v,c])=>(
                           <div key={l} style={{background:'rgba(255,255,255,0.03)',borderRadius:7,padding:'7px 8px'}}>
                             <div style={{fontFamily:'var(--font-mono)',fontSize:'0.48rem',color:'#555',marginBottom:3,letterSpacing:0.5}}>{l}</div>
-                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:c,fontWeight:700}}>{v}</div>
+                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:c,fontWeight:700}}>{v}</div>
                           </div>
                         ))}
                       </div>
                     </div>
-
-                    {/* Rank movement */}
-                    {redditData?.rankPrev!=null&&(
+                    {redditData.rankPrev!=null&&(
                       <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#888',marginBottom:10,paddingBottom:10,borderBottom:'1px solid #1a1a1a'}}>
                         {redditData.rank < redditData.rankPrev
                           ? `▲ Up from #${redditData.rankPrev} yesterday — retail interest accelerating`
@@ -1343,16 +1369,8 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                           : `→ Steady at #${redditData.rank} — stable retail attention`}
                       </div>
                     )}
-
-                    {/* Interpretation */}
-                    <div style={{fontSize:'0.78rem',color:'#B2B2B2',lineHeight:1.8,marginBottom:10}}>
-                      {interpretation}
-                    </div>
-
-                    {/* Source legitimacy note */}
-                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.54rem',color:'#444',paddingTop:8,borderTop:'1px solid #1a1a1a'}}>
-                      Source: Apewisdom · aggregates r/wallstreetbets, r/stocks, r/investing, r/options · updates hourly · used by Bloomberg Terminal &amp; institutional desks as retail sentiment gauge
-                    </div>
+                    <div style={{fontSize:'0.78rem',color:'#B2B2B2',lineHeight:1.8,marginBottom:10}}>{interpretation}</div>
+                    {sourceNote}
                   </div>
                 )
               })()}
