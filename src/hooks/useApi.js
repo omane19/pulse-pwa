@@ -571,28 +571,46 @@ export async function fetchFMPScreener({ minMcap = 500, limit = 500 } = {}) {
    DIVIDEND SCREENER — sorted by dividend yield descending
    Uses FMP company-screener with dividendMoreThan filter
 ══════════════════════════════════════════ */
+// Returns true for legitimate common stock tickers, false for warrants/rights/units/preferred
+function isCommonStock(ticker) {
+  if (!ticker) return false
+  // Warrants: ticker ending in W with 4+ chars (e.g. COIW, HOOW, MSTW, PLTW)
+  if (ticker.length >= 4 && ticker.endsWith('W')) return false
+  // Rights: ending in R with 4+ chars (e.g. ABCR — but not EVR, CARR which are real)
+  if (ticker.length >= 5 && ticker.endsWith('R')) return false
+  // Units: ending in U with 4+ chars
+  if (ticker.length >= 4 && ticker.endsWith('U')) return false
+  // Preferred shares or foreign: contains dash or dot
+  if (ticker.includes('-') || ticker.includes('.')) return false
+  // Contains digits (e.g. special securities like COWN1)
+  if (/\d/.test(ticker)) return false
+  // Excessively long (7+ chars = usually foreign or special)
+  if (ticker.length > 6) return false
+  return true
+}
+
 export async function fetchDividendScreener({ minYield = 0, limit = 100 } = {}) {
   try {
-    // Use stable dividends-calendar — available on FMP paid plans
-    // Routes through proxy — key stays server-side
     const now = new Date()
     const from = now.toISOString().slice(0, 10)
     const to = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10)
-    const apiPath = `/dividends-calendar?from=${from}&to=${to}`
-    const d = await fmp(apiPath, 3600000)
+    const d = await fmp(`/dividends-calendar?from=${from}&to=${to}`, 3600000)
     if (!Array.isArray(d) || !d.length) throw new Error('empty')
 
-    // Deduplicate by ticker (calendar has multiple entries per stock), keep highest yield
     const seen = {}
     for (const r of d) {
       const ticker = r.symbol
-      if (!ticker) continue
-      // Normalize yield: some entries decimal (0.045), some percentage (4.5)
+      if (!ticker || !isCommonStock(ticker)) continue
+
+      // Normalize yield: FMP returns decimal (0.045) or percent (4.5)
       const rawYield = r.yield ?? r.dividendYield ?? null
       const yieldPct = rawYield != null
         ? parseFloat((rawYield > 1 ? rawYield : rawYield * 100).toFixed(2))
         : null
-      if (!yieldPct || yieldPct <= 0) continue
+
+      // Sanity bounds: real sustainable dividends are 0.1%–15%
+      if (!yieldPct || yieldPct < 0.1 || yieldPct > 15) continue
+
       if (!seen[ticker] || yieldPct > seen[ticker].divYield) {
         seen[ticker] = {
           ticker,
@@ -615,19 +633,23 @@ export async function fetchDividendScreener({ minYield = 0, limit = 100 } = {}) 
       .sort((a, b) => (b.divYield || 0) - (a.divYield || 0))
       .slice(0, limit)
 
-    // Fallback: if calendar returns nothing, use screener
     if (!results.length) {
-      const apiPath2 = `/company-screener?dividendMoreThan=${minYield || 1}&limit=200&isEtf=false&isActivelyTrading=true&country=US`
-      const d2 = await fmp(apiPath2, 3600000)
+      // Fallback: company screener
+      const d2 = await fmp(`/company-screener?dividendMoreThan=${minYield || 1}&limit=200&isEtf=false&isActivelyTrading=true&country=US`, 3600000)
       if (!Array.isArray(d2) || !d2.length) return []
-      return d2.map(r => {
-        const rawYield = r.dividendYield ?? null
-        const yieldPct = rawYield != null ? parseFloat((rawYield < 1 ? rawYield * 100 : rawYield).toFixed(2)) : null
-        if (!yieldPct || yieldPct <= 0) return null
-        return { ticker: r.symbol, name: r.companyName || r.symbol, sector: r.sector || 'Unknown',
-          price: r.price || 0, mcap: r.marketCap || 0, divYield: yieldPct,
-          dividend: r.lastAnnualDividend || null, exDivDate: null, paymentDate: null, frequency: null, pe: r.pe || null }
-      }).filter(Boolean).sort((a,b) => b.divYield - a.divYield).slice(0, limit)
+      return d2
+        .filter(r => r.symbol && isCommonStock(r.symbol))
+        .map(r => {
+          const rawYield = r.dividendYield ?? null
+          const yieldPct = rawYield != null ? parseFloat((rawYield < 1 ? rawYield * 100 : rawYield).toFixed(2)) : null
+          if (!yieldPct || yieldPct < 0.1 || yieldPct > 15) return null
+          return { ticker: r.symbol, name: r.companyName || r.symbol, sector: r.sector || 'Unknown',
+            price: r.price || 0, mcap: r.marketCap || 0, divYield: yieldPct,
+            dividend: r.lastAnnualDividend || null, exDivDate: null, paymentDate: null, frequency: null, pe: r.pe || null }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.divYield - a.divYield)
+        .slice(0, limit)
     }
 
     return results

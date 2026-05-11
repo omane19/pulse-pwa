@@ -435,12 +435,14 @@ export default function Screener({ onNavigateToDive }) {
           const price = data?.quote?.c || s.price || 0
           const chg = data?.quote?.dp || 0
           const metrics = data?.metrics || {}
-          // Skip penny stocks (unreliable data, inflated yields)
+          // Skip penny stocks and micro-caps — unreliable data, inflated yields
           if (price < 5) return null
-        // FMP sometimes returns yield in wrong units - if > 50%, likely needs /100
-        const divYield = s.divYield && s.divYield > 50 ? s.divYield / 100 : s.divYield
-        // Skip if yield is still unrealistic after correction
-        if (!divYield || divYield > 25) return null
+          const mcapVal = data?.profile?.marketCapitalization || s.mcap || 0
+          if (mcapVal > 0 && mcapVal < 50e6) return null  // require $50M+ market cap
+          // Normalize yield — FMP sometimes returns in wrong units
+          const divYield = s.divYield && s.divYield > 50 ? s.divYield / 100 : s.divYield
+          // Real sustainable dividends: 0.1%–15% — anything outside is bad data
+          if (!divYield || divYield < 0.1 || divYield > 15) return null
           const annualPayout = s.dividend
             ? parseFloat((s.dividend * (s.frequency === 'Monthly' ? 12 : s.frequency === 'Semi-Annual' ? 2 : 4)).toFixed(2))
             : price && divYield ? parseFloat((price * divYield / 100).toFixed(2)) : null
