@@ -1197,6 +1197,8 @@ export async function fetchRegimeData(ticker) {
 
 /* ══════════════════════════════════════════
    MARKET MOVERS (biggest gainers/losers)
+   Filters out penny stocks (< $5) and non-common-stock securities
+   so results match quality seen on Yahoo Finance / Bloomberg
 ══════════════════════════════════════════ */
 export async function fetchMarketMovers() {
   if (!hasKeys().fmp) return null
@@ -1205,15 +1207,90 @@ export async function fetchMarketMovers() {
       fmp(`/biggest-gainers`, 180000),
       fmp(`/biggest-losers`, 180000),
     ])
-    const mapMovers = arr => Array.isArray(arr) ? arr.slice(0, 10).map(r => ({
-      ticker:  r.symbol || r.ticker,
-      name:    r.name || r.companyName || '',
-      price:   r.price || null,
-      change:  r.change || null,
-      changePct: r.changesPercentage || r.changePercentage || null,
-    })) : []
+    const mapMovers = arr => Array.isArray(arr)
+      ? arr
+          .filter(r => {
+            const ticker = r.symbol || r.ticker
+            const price  = parseFloat(r.price) || 0
+            const vol    = parseFloat(r.volume) || 0
+            return (
+              isCommonStock(ticker) &&
+              price >= 5 &&
+              (vol === 0 || vol >= 50000)  // skip thinly-traded; 0 = volume not provided
+            )
+          })
+          .slice(0, 10)
+          .map(r => ({
+            ticker:    r.symbol || r.ticker,
+            name:      r.name || r.companyName || '',
+            price:     r.price || null,
+            change:    r.change || null,
+            changePct: r.changesPercentage || r.changePercentage || null,
+          }))
+      : []
     return { gainers: mapMovers(gainers), losers: mapMovers(losers) }
   } catch { return null }
+}
+
+/* ══════════════════════════════════════════
+   MACRO TICKER — live quotes for market overview bar
+   Covers US Market ETFs, major crypto, commodity ETFs
+══════════════════════════════════════════ */
+export const MACRO_SECTIONS = {
+  markets: {
+    label: '🇺🇸 US Markets',
+    items: [
+      { s:'SPY',     l:'S&P 500'  },
+      { s:'QQQ',     l:'Nasdaq'   },
+      { s:'DIA',     l:'Dow Jones'},
+      { s:'IWM',     l:'Russell 2K'},
+      { s:'GLD',     l:'Gold'     },
+      { s:'BTCUSD',  l:'Bitcoin'  },
+      { s:'USO',     l:'Crude Oil'},
+    ],
+  },
+  crypto: {
+    label: '₿ Crypto',
+    items: [
+      { s:'BTCUSD',  l:'Bitcoin'  },
+      { s:'ETHUSD',  l:'Ethereum' },
+      { s:'XRPUSD',  l:'XRP'      },
+      { s:'SOLUSD',  l:'Solana'   },
+      { s:'BNBUSD',  l:'BNB'      },
+      { s:'DOGEUSD', l:'Dogecoin' },
+    ],
+  },
+  commodities: {
+    label: '⚡ Commodities',
+    items: [
+      { s:'GLD',  l:'Gold'       },
+      { s:'SLV',  l:'Silver'     },
+      { s:'USO',  l:'Oil (WTI)'  },
+      { s:'BNO',  l:'Brent Crude'},
+      { s:'UNG',  l:'Nat. Gas'   },
+      { s:'COPX', l:'Copper'     },
+      { s:'PPLT', l:'Platinum'   },
+    ],
+  },
+}
+
+export async function fetchMacroTicker() {
+  const allSymbols = [...new Set(
+    Object.values(MACRO_SECTIONS).flatMap(sec => sec.items.map(i => i.s))
+  )]
+  const d = await fmp(`/quote?symbol=${allSymbols.join(',')}`, 300000)
+  if (!Array.isArray(d)) return {}
+  const map = {}
+  d.forEach(q => {
+    if (q.symbol && q.price != null) {
+      map[q.symbol] = {
+        price:     q.price,
+        changePct: q.changesPercentage ?? q.changePercentage ?? 0,
+        change:    q.change ?? 0,
+      }
+    }
+  })
+  return map
 }
 
 

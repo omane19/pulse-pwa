@@ -11,6 +11,7 @@ import Portfolio from './components/Portfolio.jsx'
 import Backtest from './components/Backtest.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import MacroTicker from './components/MacroTicker.jsx'
 
 /* ── Icons ── */
 function IconDive({ active }) {
@@ -99,6 +100,8 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      <MacroTicker />
 
       <main className="page-area">
         <div style={{display: activeTab==='dive'      ? 'contents' : 'none'}}><ErrorBoundary><DeepDive initialTicker={diveQuery.ticker} diveVersion={diveQuery.version} onNavigate={navigateToDive} /></ErrorBoundary></div>
