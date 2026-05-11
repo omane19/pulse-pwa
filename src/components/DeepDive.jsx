@@ -809,23 +809,47 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               <SectionHeader>Analysis Brief</SectionHeader>
               <AnalysisBrief ticker={ticker} company={data.profile?.name||ticker} sector={data.profile?.finnhubIndustry||''} price={price} result={result} ma50={ma50} metrics={mt} news={data.news} rec={data.rec} earn={data.earnings} insider={data.insider||[]}/>
 
-              {/* AI Brief — user-triggered, needs ANTHROPIC_KEY in Vercel */}
+              {/* AI Brief — user-triggered */}
               <div style={{marginBottom:14}}>
                 {!aiSummary && !aiLoading && (
                   <button className="btn btn-ghost" style={{width:'100%',fontSize:'0.74rem',padding:'10px 0',borderStyle:'dashed',borderColor:'rgba(0,229,255,0.2)',color:'#555'}}
                     onClick={async()=>{
                       setAiLoading(true)
                       const headlines=(data.news||[]).slice(0,3).map(n=>n.title).filter(Boolean)
+                      // Compute earnings stats for the AI
+                      const earn=data.earnings||[]
+                      const withEst=earn.filter(q=>q.estimate!=null&&q.actual!=null)
+                      const beats=withEst.filter(q=>q.actual>q.estimate)
+                      const beatRate=withEst.length?Math.round(beats.length/withEst.length*100):null
+                      let beatStreak=0
+                      for(const q of withEst){if(q.actual>q.estimate)beatStreak++;else break}
+                      // Analyst bullish %
+                      const rc=data.rec?.current||{}
+                      const tot=(rc.strongBuy||0)+(rc.buy||0)+(rc.hold||0)+(rc.sell||0)+(rc.strongSell||0)
+                      const analystBull=tot>0?Math.round(((rc.strongBuy||0)+(rc.buy||0))/tot*100):null
+                      // Insider net
+                      const ins=data.insider||[]
+                      const insiderNet=ins.filter(x=>x.isBuy===true).length - ins.filter(x=>x.isBuy===false).length
                       const s=await fetchAISummary(ticker,{
-                        company: data.profile?.name||ticker,
-                        score:   result?.pct!=null?Math.round(result.pct):null,
-                        verdict: result?.verdict||'',
-                        sector:  data.profile?.finnhubIndustry||'',
-                        pe:      result?.pe!=null?result.pe.toFixed(1):null,
-                        growth:  mt.revenueGrowthYoY!=null?mt.revenueGrowthYoY.toFixed(1):null,
+                        company:      data.profile?.name||ticker,
+                        score:        result?.pct!=null?Math.round(result.pct):null,
+                        verdict:      result?.verdict||'',
+                        sector:       data.profile?.finnhubIndustry||'',
+                        pe:           result?.pe!=null?result.pe.toFixed(1):null,
+                        growth:       mt.revenueGrowthYoY!=null?parseFloat(mt.revenueGrowthYoY.toFixed(1)):null,
+                        rsi:          result?.mom?.rsi??null,
+                        ma50:         ma50||null,
+                        price:        price?parseFloat(price.toFixed(2)):null,
+                        weekHigh52:   data.quote?.yearHigh||null,
+                        weekLow52:    data.quote?.yearLow||null,
+                        beatRate,
+                        beatStreak,
+                        analystBull,
+                        insiderNet:   ins.length?insiderNet:null,
+                        earningsDate: data.ec?.date||null,
                         headlines,
                       })
-                      setAiSummary(s||'AI summary unavailable — check ANTHROPIC_KEY is set in Vercel.')
+                      setAiSummary(s||'AI unavailable — check ANTHROPIC_KEY is set in Vercel.')
                       setAiLoading(false)
                     }}>
                     ✨ Get AI Brief
@@ -836,13 +860,25 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                     ✨ Generating AI brief…
                   </div>
                 )}
-                {aiSummary&&(
-                  <div style={{padding:'14px 16px',background:'rgba(0,229,255,0.05)',border:'1px solid rgba(0,229,255,0.2)',borderRadius:10}}>
-                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:CYAN,letterSpacing:1,marginBottom:8}}>✨ AI BRIEF · claude haiku</div>
-                    <div style={{fontSize:'0.84rem',color:'#e0e0e0',lineHeight:1.9}}>{aiSummary}</div>
-                    <button onClick={()=>setAiSummary(null)} style={{marginTop:8,background:'transparent',border:'none',color:'#444',fontFamily:'var(--font-mono)',fontSize:'0.58rem',cursor:'pointer',padding:0}}>✕ dismiss</button>
-                  </div>
-                )}
+                {aiSummary&&(()=>{
+                  // Split into sentences for better readability
+                  const sentences=aiSummary.split(/(?<=[.!?])\s+/).filter(s=>s.trim())
+                  const labels=['Signal','Technical','Fundamental','Risk','Watch']
+                  return(
+                    <div style={{background:'rgba(0,229,255,0.04)',border:'1px solid rgba(0,229,255,0.18)',borderRadius:12,overflow:'hidden'}}>
+                      <div style={{padding:'10px 16px',borderBottom:'1px solid rgba(0,229,255,0.1)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:CYAN,letterSpacing:1}}>✨ AI BRIEF · claude haiku</div>
+                        <button onClick={()=>setAiSummary(null)} style={{background:'transparent',border:'none',color:'#444',fontFamily:'var(--font-mono)',fontSize:'0.62rem',cursor:'pointer',padding:'0 4px'}}>✕</button>
+                      </div>
+                      {sentences.map((s,i)=>(
+                        <div key={i} style={{padding:'10px 16px',borderBottom:i<sentences.length-1?'1px solid rgba(255,255,255,0.04)':'none',display:'flex',gap:10,alignItems:'flex-start'}}>
+                          <div style={{fontFamily:'var(--font-mono)',fontSize:'0.52rem',color:CYAN,opacity:0.6,paddingTop:3,flexShrink:0,letterSpacing:0.5,minWidth:70}}>{labels[i]||`[${i+1}]`}</div>
+                          <div style={{fontSize:'0.82rem',color:'#e0e0e0',lineHeight:1.8}}>{s}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
 
               <SectionHeader>Position Sizing</SectionHeader>
@@ -1235,39 +1271,91 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           {diveTab==='news'&&(
             <>
               {/* Reddit Sentiment */}
-              <SectionHeader>Reddit Sentiment · r/wallstreetbets &amp; r/stocks</SectionHeader>
-              {redditData ? (
-                <div className="card" style={{padding:'14px 16px',marginBottom:10}}>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
-                    {[
-                      ['Rank', `#${redditData.rank}`, redditData.rank<=10?GREEN:redditData.rank<=25?YELLOW:'#B2B2B2'],
-                      ['Mentions Today', String(redditData.mentions), CYAN],
-                      ['vs Yesterday', redditData.mentions24h!=null?`${redditData.mentions>=redditData.mentions24h?'+':''}${redditData.mentions-redditData.mentions24h}`:'—',
-                        redditData.mentions24h!=null&&redditData.mentions>redditData.mentions24h?GREEN:redditData.mentions24h!=null&&redditData.mentions<redditData.mentions24h?RED:'#888'],
-                    ].map(([l,v,c])=>(
-                      <div key={l} style={{textAlign:'center',background:'rgba(255,255,255,0.03)',borderRadius:8,padding:'8px 4px'}}>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.52rem',color:'#888',marginBottom:4,letterSpacing:0.5}}>{l}</div>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.86rem',color:c,fontWeight:700}}>{v}</div>
+              <SectionHeader>Reddit Sentiment · r/wallstreetbets · r/stocks · r/investing</SectionHeader>
+              {(()=>{
+                const rankColor = redditData
+                  ? redditData.rank<=10?'#FFD700':redditData.rank<=25?'#C0C0C0':redditData.rank<=50?'#CD7F32':'#888'
+                  : '#555'
+                const mentionDelta = redditData?.mentions24h!=null
+                  ? redditData.mentions - redditData.mentions24h : null
+                const mentionGrowth = mentionDelta!=null&&redditData.mentions24h>0
+                  ? Math.round(mentionDelta/redditData.mentions24h*100) : null
+                const engagement = redditData?.upvotes&&redditData?.mentions
+                  ? (redditData.upvotes/redditData.mentions).toFixed(1) : null
+                const engLabel = engagement
+                  ? parseFloat(engagement)>=3?'High quality':parseFloat(engagement)>=1?'Moderate':'High noise' : null
+                const engColor = engagement
+                  ? parseFloat(engagement)>=3?GREEN:parseFloat(engagement)>=1?YELLOW:RED : '#888'
+
+                // Interpretation text
+                let interpretation = ''
+                if (!redditData) {
+                  interpretation = `${ticker} is not in the top 100 Reddit-mentioned stocks today. Institutional money is driving this move, not retail. This can be a positive sign — less crowded, less liable to sharp retail-driven reversals.`
+                } else if (redditData.rank<=10 && mentionDelta!=null && mentionDelta>0) {
+                  interpretation = `${ticker} is in the top 10 most-discussed stocks on Reddit with accelerating mentions (+${mentionDelta} vs yesterday). Heavy retail FOMO is present — elevated crowding risk. Contrarian signal: extreme retail enthusiasm at peaks often precedes pullbacks.`
+                } else if (redditData.rank<=10) {
+                  interpretation = `${ticker} is in the top 10 Reddit stocks but mention volume is flat or declining. Peak retail attention may have passed — watch for momentum fading as retail rotates to the next story.`
+                } else if (redditData.rank<=25 && mentionDelta!=null && mentionDelta>0) {
+                  interpretation = `${ticker} is gaining Reddit traction (rank #${redditData.rank}, up ${mentionDelta} mentions). Early-stage retail discovery phase — this can sustain momentum if fundamentals support the narrative.`
+                } else if (redditData.rank<=50) {
+                  interpretation = `${ticker} has moderate Reddit presence at rank #${redditData.rank}. On the retail radar but not crowded — a balanced signal. Retail interest is real but not yet at risk of blowoff.`
+                } else {
+                  interpretation = `${ticker} has low Reddit visibility (rank #${redditData.rank}). Limited retail crowding — price action is driven by institutional positioning, earnings, or macro. Less pump risk, more fundamental-driven.`
+                }
+
+                return(
+                  <div className="card" style={{padding:'14px 16px',marginBottom:10}}>
+                    {/* Top row: rank badge + stats */}
+                    <div style={{display:'flex',gap:12,alignItems:'stretch',marginBottom:12}}>
+                      {/* Rank badge */}
+                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',width:64,flexShrink:0,background:'rgba(255,255,255,0.03)',borderRadius:10,padding:'10px 4px',border:`1px solid ${rankColor}30`}}>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.48rem',color:'#555',marginBottom:4,letterSpacing:1}}>RANK</div>
+                        <div style={{fontFamily:'var(--font-mono)',fontSize:redditData?'1.5rem':'0.9rem',fontWeight:900,color:rankColor,lineHeight:1}}>
+                          {redditData?`#${redditData.rank}`:'—'}
+                        </div>
+                        {redditData&&redditData.rank<=10&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#FFD700',marginTop:3}}>TOP 10</div>}
+                        {redditData&&redditData.rank>10&&redditData.rank<=25&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#C0C0C0',marginTop:3}}>TOP 25</div>}
+                        {redditData&&redditData.rank>25&&redditData.rank<=50&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#CD7F32',marginTop:3}}>TOP 50</div>}
                       </div>
-                    ))}
-                  </div>
-                  {redditData.rankPrev!=null&&(
-                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#888',textAlign:'center'}}>
-                      {redditData.rank < redditData.rankPrev
-                        ? `▲ Moved up from #${redditData.rankPrev} — rising retail interest`
-                        : redditData.rank > redditData.rankPrev
-                        ? `▼ Dropped from #${redditData.rankPrev} — fading retail attention`
-                        : `Steady at #${redditData.rank}`}
+                      {/* Stats grid */}
+                      <div style={{flex:1,display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+                        {[
+                          ['Mentions', redditData?String(redditData.mentions):'—', CYAN],
+                          ['24h Change', mentionDelta!=null?`${mentionDelta>=0?'+':''}${mentionDelta}${mentionGrowth!=null?` (${mentionGrowth>=0?'+':''}${mentionGrowth}%)`:''}`:'—', mentionDelta!=null&&mentionDelta>0?GREEN:mentionDelta!=null&&mentionDelta<0?RED:'#888'],
+                          ['Engagement', engagement?`${engagement}x`:'—', engColor],
+                          ['Quality', engLabel||'—', engColor],
+                        ].map(([l,v,c])=>(
+                          <div key={l} style={{background:'rgba(255,255,255,0.03)',borderRadius:7,padding:'7px 8px'}}>
+                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.48rem',color:'#555',marginBottom:3,letterSpacing:0.5}}>{l}</div>
+                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:c,fontWeight:700}}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="card" style={{padding:'12px 16px',marginBottom:10}}>
-                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555',textAlign:'center'}}>
-                    {ticker} — not in top 100 Reddit mentions today
+
+                    {/* Rank movement */}
+                    {redditData?.rankPrev!=null&&(
+                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#888',marginBottom:10,paddingBottom:10,borderBottom:'1px solid #1a1a1a'}}>
+                        {redditData.rank < redditData.rankPrev
+                          ? `▲ Up from #${redditData.rankPrev} yesterday — retail interest accelerating`
+                          : redditData.rank > redditData.rankPrev
+                          ? `▼ Down from #${redditData.rankPrev} yesterday — retail rotating out`
+                          : `→ Steady at #${redditData.rank} — stable retail attention`}
+                      </div>
+                    )}
+
+                    {/* Interpretation */}
+                    <div style={{fontSize:'0.78rem',color:'#B2B2B2',lineHeight:1.8,marginBottom:10}}>
+                      {interpretation}
+                    </div>
+
+                    {/* Source legitimacy note */}
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.54rem',color:'#444',paddingTop:8,borderTop:'1px solid #1a1a1a'}}>
+                      Source: Apewisdom · aggregates r/wallstreetbets, r/stocks, r/investing, r/options · updates hourly · used by Bloomberg Terminal &amp; institutional desks as retail sentiment gauge
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>
               <div className="card" style={{padding:'0 16px'}}>
