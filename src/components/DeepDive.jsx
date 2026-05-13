@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchAISummary } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchAISummary, fetchInstitutionalHolders } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES, SOURCE_TIERS } from '../utils/constants.js'
@@ -662,6 +662,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [diveTab,     setDiveTab]     = useState('overview')
   const [aiSummary,     setAiSummary]     = useState(null)
   const [aiLoading,     setAiLoading]     = useState(false)
+  const [instHolders,   setInstHolders]   = useState(null)
   const aiTickerRef = useRef('')
 
   useEffect(() => {
@@ -670,6 +671,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
 
   useEffect(() => {
     setDiveTab('overview')
+    setInstHolders(null)
     const cached = getAiCache(ticker)
     setAiSummary(cached || null)
     aiTickerRef.current = ''
@@ -681,6 +683,14 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
     const r = scoreAsset(data.quote, data.candles, data.candles?.ma50, data.metrics, Array.isArray(data.news)?data.news:[], data.rec, Array.isArray(data.earnings)?data.earnings:[], smartMoney || undefined, { ticker, companyName: data.profile?.name || '', priceTarget: data.priceTarget, upgrades: Array.isArray(data.upgrades)?data.upgrades:[], macd: data.macd || null, regimeData: data.regimeData || null })
     setResult(r)
   }, [data, smartMoney])
+
+  // Fetch institutional holders when tab is opened
+  useEffect(() => {
+    if (diveTab !== 'holders' || !ticker) return
+    if (instHolders !== null) return // already loaded for this ticker
+    setInstHolders([]) // loading sentinel
+    fetchInstitutionalHolders(ticker).then(d => setInstHolders(d || [])).catch(() => setInstHolders([]))
+  }, [diveTab, ticker]) // eslint-disable-line
 
   // Fetch smart money — reuse data.insider (already fetched), only fetch congressional + analyst + unusual flow
   useEffect(() => {
@@ -842,7 +852,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
 
           {/* Sub-tab nav */}
           <div style={{display:'flex',gap:6,marginBottom:14,marginTop:2}}>
-            {[['overview','Score'],['technical','Chart'],['fundamentals','Fundas'],['news','News']].map(([id,label])=>(
+            {[['overview','Score'],['technical','Chart'],['fundamentals','Fundas'],['news','News'],['holders','13F']].map(([id,label])=>(
               <button key={id} onClick={()=>setDiveTab(id)} style={{
                 flex:1,padding:'8px 4px',borderRadius:8,fontFamily:'var(--font-mono)',fontSize:'0.65rem',
                 background:diveTab===id?'rgba(0,229,255,0.12)':'rgba(255,255,255,0.04)',
@@ -1323,6 +1333,70 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
                 />
               ) : (
                 <div style={{color:'#B2B2B2',textAlign:'center',padding:24,fontSize:'0.84rem'}}>No news in past 10 days.</div>
+              )}
+              <div style={{height:16}}/>
+            </>
+          )}
+
+          {diveTab==='holders'&&(
+            <>
+              <SectionHeader>13F Institutional Holders</SectionHeader>
+              {instHolders === null || (instHolders.length === 0 && diveTab === 'holders') ? (
+                <div style={{color:'#555',textAlign:'center',padding:24,fontSize:'0.8rem',fontFamily:'var(--font-mono)'}}>Loading…</div>
+              ) : instHolders.length === 0 ? (
+                <div style={{color:'#555',textAlign:'center',padding:24,fontSize:'0.8rem'}}>No 13F data available for {ticker}.</div>
+              ) : (
+                <>
+                  {(() => {
+                    const totalShares = instHolders.reduce((s, h) => s + (h.sharesNumber || 0), 0)
+                    const totalVal    = instHolders.reduce((s, h) => s + (h.marketValue || 0), 0)
+                    const quarter     = instHolders[0]?.date?.slice(0, 7) || ''
+                    return (
+                      <>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
+                          {[
+                            ['Institutions', instHolders.length],
+                            ['Total Value', totalVal >= 1e9 ? `$${(totalVal/1e9).toFixed(1)}B` : `$${(totalVal/1e6).toFixed(0)}M`],
+                            ['As of', quarter],
+                          ].map(([l,v]) => (
+                            <div key={l} className="metric-cell"><div className="metric-label">{l}</div><div className="metric-value" style={{fontSize:'0.72rem'}}>{v}</div></div>
+                          ))}
+                        </div>
+                        {instHolders.map((h, i) => {
+                          const chg = h.changeInSharesNumber || 0
+                          const chgPct = h.lastSharesNumber ? (chg / h.lastSharesNumber * 100) : 0
+                          const barW = Math.max(4, Math.round((h.marketValue || 0) / (instHolders[0]?.marketValue || 1) * 100))
+                          return (
+                            <div key={i} style={{marginBottom:10, paddingBottom:10, borderBottom:'1px solid #111'}}>
+                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.72rem',color:'#ccc',fontWeight:600,marginBottom:1}}>{h.investorName}</div>
+                                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                                    <div style={{flex:1,height:2,background:'#1a1a1a',borderRadius:1}}>
+                                      <div style={{width:`${barW}%`,height:'100%',background:'#2a2a2a',borderRadius:1}}/>
+                                    </div>
+                                    <span style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:'#444',flexShrink:0}}>
+                                      {h.marketValue >= 1e9 ? `$${(h.marketValue/1e9).toFixed(1)}B` : `$${(h.marketValue/1e6).toFixed(0)}M`}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div style={{textAlign:'right',flexShrink:0,marginLeft:12}}>
+                                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color: chg > 0 ? GREEN : chg < 0 ? RED : '#444'}}>
+                                    {chg === 0 ? 'No change' : `${chg > 0 ? '+' : ''}${(chg/1e6).toFixed(1)}M shs`}
+                                  </div>
+                                  {chg !== 0 && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.56rem',color: chg > 0 ? GREEN : RED}}>{chgPct > 0 ? '+' : ''}{chgPct.toFixed(1)}%</div>}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        <div style={{fontSize:'0.66rem',color:'#333',textAlign:'center',paddingTop:8,lineHeight:1.8}}>
+                          Source: SEC 13F filings via FMP · Updated quarterly
+                        </div>
+                      </>
+                    )
+                  })()}
+                </>
               )}
               <div style={{height:16}}/>
             </>

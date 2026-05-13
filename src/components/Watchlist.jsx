@@ -165,39 +165,61 @@ function ScoreBadge({ pct, verdict, fmpRating, piotroski, delta }) {
   )
 }
 
-function AlertModal({ ticker, currentPrice, alerts, onSave, onClose }) {
+function AlertModal({ ticker, currentPrice, currentRsi, currentMa50, alerts, onSave, onClose }) {
   const existing = alerts[ticker]
-  const [above, setAbove] = useState(existing?.above != null ? String(existing.above) : '')
-  const [below, setBelow] = useState(existing?.below != null ? String(existing.below) : '')
+  const [above,    setAbove]    = useState(existing?.above    != null ? String(existing.above)    : '')
+  const [below,    setBelow]    = useState(existing?.below    != null ? String(existing.below)    : '')
+  const [rsiBelow, setRsiBelow] = useState(existing?.rsiBelow != null ? String(existing.rsiBelow) : '')
+  const [rsiAbove, setRsiAbove] = useState(existing?.rsiAbove != null ? String(existing.rsiAbove) : '')
+  const [maCross,  setMaCross]  = useState(existing?.maCross  ?? false)
 
   const save = () => {
     const a = {}
-    const aboveVal = parseFloat(above)
-    const belowVal = parseFloat(below)
-    if (above && !isNaN(aboveVal) && aboveVal > 0) a.above = aboveVal
-    if (below && !isNaN(belowVal) && belowVal > 0) a.below = belowVal
+    const av = parseFloat(above);    if (above    && !isNaN(av) && av > 0)    a.above    = av
+    const bv = parseFloat(below);    if (below    && !isNaN(bv) && bv > 0)    a.below    = bv
+    const rv = parseFloat(rsiBelow); if (rsiBelow && !isNaN(rv) && rv > 0)    a.rsiBelow = rv
+    const sv = parseFloat(rsiAbove); if (rsiAbove && !isNaN(sv) && sv > 0)    a.rsiAbove = sv
+    if (maCross) a.maCross = true
     onSave(ticker, Object.keys(a).length ? a : null)
     onClose()
   }
 
+  const lbl = t => <div style={{ fontSize:'0.56rem', color:'#444', marginBottom:3, letterSpacing:0.5, textTransform:'uppercase' }}>{t}</div>
+
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-      <div style={{ background:'#161616', border:`1px solid ${CYAN}40`, borderRadius:16, padding:20, width:'100%', maxWidth:340 }}>
-        <div style={{ fontSize:'0.72rem', color:'#aaa', fontWeight:700, marginBottom:4, letterSpacing:0.5 }}>Price Alert — {ticker}</div>
-        {currentPrice && <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.7rem', color:G1, marginBottom:12 }}>Current: ${currentPrice.toFixed(2)}</div>}
-        <div style={{ marginBottom:10 }}>
-          <div style={{ fontSize:'0.6rem', color:G1, marginBottom:4, letterSpacing:0.5 }}>ALERT WHEN PRICE GOES ABOVE ($)</div>
-          <input className="input" value={above} onChange={e => setAbove(e.target.value)} type="number" min="0" step="any" placeholder={`e.g. ${currentPrice ? (currentPrice*1.1).toFixed(0) : '250'}`} />
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div style={{ background:'#111', border:'1px solid #222', borderRadius:16, padding:20, width:'100%', maxWidth:340 }}>
+        <div style={{ fontSize:'0.72rem', color:'#aaa', fontWeight:700, marginBottom:2 }}>Alerts — {ticker}</div>
+        {currentPrice && (
+          <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:'#444', marginBottom:14 }}>
+            ${currentPrice.toFixed(2)}{currentRsi != null ? ` · RSI ${currentRsi}` : ''}{currentMa50 != null ? ` · MA50 $${currentMa50}` : ''}
+          </div>
+        )}
+
+        <div style={{ fontSize:'0.58rem', color:'#333', marginBottom:6, letterSpacing:1 }}>PRICE</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:14 }}>
+          <div>{lbl('Above ($)')}<input className="input" value={above} onChange={e => setAbove(e.target.value)} type="number" min="0" step="any" placeholder={currentPrice ? (currentPrice*1.1).toFixed(0) : '250'} /></div>
+          <div>{lbl('Below ($)')}<input className="input" value={below} onChange={e => setBelow(e.target.value)} type="number" min="0" step="any" placeholder={currentPrice ? (currentPrice*0.9).toFixed(0) : '200'} /></div>
         </div>
-        <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:'0.6rem', color:G1, marginBottom:4, letterSpacing:0.5 }}>ALERT WHEN PRICE DROPS BELOW ($)</div>
-          <input className="input" value={below} onChange={e => setBelow(e.target.value)} type="number" min="0" step="any" placeholder={`e.g. ${currentPrice ? (currentPrice*0.9).toFixed(0) : '200'}`} />
+
+        <div style={{ fontSize:'0.58rem', color:'#333', marginBottom:6, letterSpacing:1 }}>TECHNICAL</div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+          <div>{lbl('RSI drops below')}<input className="input" value={rsiBelow} onChange={e => setRsiBelow(e.target.value)} type="number" min="1" max="99" step="1" placeholder="30" /></div>
+          <div>{lbl('RSI rises above')}<input className="input" value={rsiAbove} onChange={e => setRsiAbove(e.target.value)} type="number" min="1" max="99" step="1" placeholder="70" /></div>
         </div>
+        <button onClick={() => setMaCross(v => !v)} style={{
+          width:'100%', marginBottom:14, padding:'8px 12px', borderRadius:8, textAlign:'left',
+          border:`1px solid ${maCross ? YELLOW+'50' : '#222'}`,
+          background: maCross ? `${YELLOW}0d` : 'transparent',
+          color: maCross ? YELLOW : '#444',
+          fontFamily:'var(--font-mono)', fontSize:'0.62rem', cursor:'pointer'
+        }}>
+          {maCross ? '✓' : '○'} Alert on MA50 crossover{currentMa50 ? ` · MA50 $${currentMa50}` : ''}
+        </button>
+
         <div style={{ display:'flex', gap:8 }}>
-          <button className="btn btn-primary" onClick={save} style={{ flex:1 }}>Save Alert</button>
-          {existing && (
-            <button className="btn btn-danger" onClick={() => { onSave(ticker, null); onClose() }} style={{ flex:1 }}>Remove</button>
-          )}
+          <button className="btn btn-primary" onClick={save} style={{ flex:1 }}>Save</button>
+          {existing && <button className="btn btn-danger" onClick={() => { onSave(ticker, null); onClose() }} style={{ flex:1 }}>Remove</button>}
           <button className="btn" onClick={onClose} style={{ flex:1 }}>Cancel</button>
         </div>
       </div>
@@ -309,15 +331,31 @@ export default function Watchlist({ onNavigateToDive }) {
     saveScoreHist(newHist); setScoreHist(newHist)
 
     const currentAlerts = loadAlerts()
+    const currentHist2  = loadScoreHist()
     for (const item of sorted) {
-      const al = currentAlerts[item.ticker]
+      const al    = currentAlerts[item.ticker]
       const price = item.quote?.c
-      if (!al || !price) continue
-      if (al.above != null && price >= al.above) {
-        notify(`📈 ${item.ticker} crossed $${al.above}`, `Current price: $${price.toFixed(2)}`, item.ticker)
+      const rsi   = item.result?.mom?.rsi
+      const ma50  = item.candles?.ma50
+      if (!al) continue
+      if (price) {
+        if (al.above != null && price >= al.above)
+          notify(`📈 ${item.ticker} crossed $${al.above}`, `Current: $${price.toFixed(2)}`, item.ticker)
+        if (al.below != null && price <= al.below)
+          notify(`📉 ${item.ticker} dropped below $${al.below}`, `Current: $${price.toFixed(2)}`, item.ticker)
       }
-      if (al.below != null && price <= al.below) {
-        notify(`📉 ${item.ticker} dropped below $${al.below}`, `Current price: $${price.toFixed(2)}`, item.ticker)
+      if (rsi != null) {
+        if (al.rsiBelow != null && rsi <= al.rsiBelow)
+          notify(`📊 ${item.ticker} RSI ${rsi} — oversold`, `RSI dropped below ${al.rsiBelow}`, item.ticker)
+        if (al.rsiAbove != null && rsi >= al.rsiAbove)
+          notify(`📊 ${item.ticker} RSI ${rsi} — overbought`, `RSI rose above ${al.rsiAbove}`, item.ticker)
+      }
+      if (al.maCross && price && ma50) {
+        const prevAbove = currentHist2[item.ticker]?.aboveMA
+        const curAbove  = price > ma50
+        if (prevAbove !== undefined && prevAbove !== curAbove)
+          notify(curAbove ? `📈 ${item.ticker} crossed above MA50` : `📉 ${item.ticker} fell below MA50`, `Price $${price.toFixed(2)} · MA50 $${ma50}`, item.ticker)
+        newHist[item.ticker] = { ...newHist[item.ticker], aboveMA: curAbove }
       }
     }
 
@@ -529,15 +567,20 @@ export default function Watchlist({ onNavigateToDive }) {
       )}
 
       {/* Alert modal */}
-      {alertFor && (
-        <AlertModal
-          ticker={alertFor}
-          currentPrice={results.find(r => r.ticker === alertFor)?.quote?.c || null}
-          alerts={alerts}
-          onSave={saveAlert}
-          onClose={() => setAlertFor(null)}
-        />
-      )}
+      {alertFor && (() => {
+        const af = results.find(r => r.ticker === alertFor)
+        return (
+          <AlertModal
+            ticker={alertFor}
+            currentPrice={af?.quote?.c || null}
+            currentRsi={af?.result?.mom?.rsi ?? null}
+            currentMa50={af?.candles?.ma50 ?? null}
+            alerts={alerts}
+            onSave={saveAlert}
+            onClose={() => setAlertFor(null)}
+          />
+        )
+      })()}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>

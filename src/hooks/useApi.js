@@ -1598,6 +1598,24 @@ export async function fetchRedditTopStocks() {
   } catch { return [] }
 }
 
+/* ── Institutional Holders — FMP v4 13F data ── */
+export async function fetchInstitutionalHolders(ticker) {
+  const key = `inst_holders_${ticker}`
+  const hit = cGet(key, 3600000) // 1-hour cache — 13F data changes quarterly
+  if (hit !== null) return hit
+  try {
+    const d = await fmpv4(`/institutional-ownership/symbol-ownership?symbol=${ticker}&includeCurrentQuarter=true`, 3600000)
+    const arr = Array.isArray(d) ? d : []
+    // Sort by market value descending, take top 20
+    const result = arr
+      .filter(h => h.investorName && h.sharesNumber > 0)
+      .sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0))
+      .slice(0, 20)
+    cSet(key, result)
+    return result
+  } catch { return [] }
+}
+
 /* ── React hook ── */
 export function useTickerData() {
   const [data,    setData]    = useState(null)

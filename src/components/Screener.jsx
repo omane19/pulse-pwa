@@ -659,6 +659,48 @@ export default function Screener({ onNavigateToDive }) {
             </button>
             <span style={{ fontSize:'0.65rem', color:G1 }}>Strong business, price down from highs</span>
           </div>
+
+          {/* Market Cap tiers */}
+          <div style={{ marginTop:12 }}>
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#555', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Market Cap</div>
+            <div style={{ display:'flex', gap:5 }}>
+              {[['Small','<$2B'],['Mid','$2–10B'],['Large','$10–100B'],['Mega','>$100B']].map(([tier, label]) => (
+                <button key={tier} onClick={() => toggleMcap(tier)}
+                  style={{ flex:1, padding:'7px 0', borderRadius:8,
+                    border:`1px solid ${mcapTiers.includes(tier) ? CYAN+'80' : G4}`,
+                    background: mcapTiers.includes(tier) ? 'rgba(0,229,255,0.07)' : '#0d0d0d',
+                    color: mcapTiers.includes(tier) ? CYAN : '#555',
+                    fontFamily:'var(--font-mono)', fontSize:'0.6rem', cursor:'pointer', lineHeight:1.4 }}>
+                  <div>{tier}</div>
+                  <div style={{ fontSize:'0.48rem', opacity:0.7 }}>{label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* RSI range */}
+          <div style={{ marginTop:12 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#555', letterSpacing:1, textTransform:'uppercase' }}>RSI Range</span>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.64rem', color: (rsiMin > 0 || rsiMax < 100) ? CYAN : '#444' }}>
+                {rsiMin === 0 && rsiMax === 100 ? 'Any' : `${rsiMin} – ${rsiMax}`}
+              </span>
+            </div>
+            <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#444', flexShrink:0, width:22 }}>Min</span>
+              <input type="range" min={0} max={95} step={5} value={rsiMin}
+                onChange={e => setRsiMin(Math.min(+e.target.value, rsiMax - 5))}
+                style={{ flex:1, accentColor:CYAN }} />
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#444', flexShrink:0, width:22 }}>Max</span>
+              <input type="range" min={5} max={100} step={5} value={rsiMax}
+                onChange={e => setRsiMax(Math.max(+e.target.value, rsiMin + 5))}
+                style={{ flex:1, accentColor:CYAN }} />
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:3 }}>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.5rem', color:'#333' }}>Oversold &lt;30</span>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.5rem', color:'#333' }}>Overbought &gt;70</span>
+            </div>
+          </div>
         </div>
       )}
 

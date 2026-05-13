@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { fetchQuote, fetchTickerLite } from '../hooks/useApi.js'
+import { fetchQuote, fetchTickerLite, fetchBacktestData } from '../hooks/useApi.js'
 import { fmtMcap, scoreAsset } from '../utils/scoring.js'
 import { Toast, PullToRefresh } from './shared.jsx'
 
@@ -120,6 +120,7 @@ export default function Portfolio({ onNavigateToDive }) {
   const [toast,    setToast]    = useState(null)
   const [editIdx,  setEditIdx]  = useState(null)
   const [sortBy,   setSortBy]   = useState('value') // value | pnl | pnlpct
+  const [benchmark, setBenchmark] = useState(null) // SPY comparison
 
   const refreshPrices = useCallback(async () => {
     if (!holdings.length) return
@@ -142,6 +143,19 @@ export default function Portfolio({ onNavigateToDive }) {
   }, [holdings])
 
   useEffect(() => { if (holdings.length) refreshPrices() }, []) // eslint-disable-line
+
+  // SPY benchmark — fetch from oldest holding date
+  useEffect(() => {
+    const dates = holdings.map(h => h.dateAdded).filter(Boolean).sort()
+    if (!dates.length) return
+    const oldest = dates[0]
+    fetchBacktestData('SPY', oldest).then(data => {
+      if (!data.length) return
+      const startClose = data[0].close
+      const endClose   = data[data.length - 1].close
+      setBenchmark({ pct: (endClose - startClose) / startClose * 100, from: oldest })
+    }).catch(() => {})
+  }, [holdings.map(h => h.dateAdded).join(',')]) // eslint-disable-line
 
   const addHolding = (h) => {
     // Merge with existing if same ticker
@@ -246,6 +260,28 @@ export default function Portfolio({ onNavigateToDive }) {
               <div key={l} className="metric-cell" style={{ flex: 1, minWidth: 0 }}>
                 <div className="metric-label">{l}</div>
                 <div className="metric-value" style={c ? { color: c } : {}}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SPY Benchmark */}
+      {benchmark && totalCost > 0 && (
+        <div style={{ background:'#0d0d0d', border:'1px solid #1a1a1a', borderRadius:12, padding:'12px 16px', marginBottom:12 }}>
+          <div style={{ fontSize:'0.56rem', color:'#444', letterSpacing:'1.2px', textTransform:'uppercase', marginBottom:8 }}>vs SPY since {benchmark.from}</div>
+          <div style={{ display:'flex', gap:8 }}>
+            {[
+              ['Portfolio', totalPnLPct, totalPnLPct >= (benchmark?.pct || 0)],
+              ['SPY',       benchmark.pct, benchmark.pct >= totalPnLPct],
+              ['Alpha',     totalPnLPct - benchmark.pct, totalPnLPct >= benchmark.pct],
+            ].map(([label, pct, isWinner]) => (
+              <div key={label} style={{ flex:1, textAlign:'center', background:'#111', border:'1px solid #1a1a1a', borderRadius:8, padding:'8px 6px' }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.5rem', color:'#444', marginBottom:4, textTransform:'uppercase' }}>{label}</div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.82rem', fontWeight:700, color: pct >= 0 ? GREEN : RED }}>
+                  {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+                </div>
+                {label === 'Alpha' && <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.5rem', color: pct >= 0 ? GREEN : RED, marginTop:2 }}>{pct >= 0 ? 'beating' : 'lagging'} market</div>}
               </div>
             ))}
           </div>

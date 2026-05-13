@@ -122,6 +122,7 @@ function getCacheTTL(path) {
   if (path.includes('/treasury'))             return 3600
   if (path.includes('/profile'))              return 3600
   if (path.includes('/ratios-ttm'))           return 3600
+  if (path.includes('/institutional'))        return 3600
   if (path.includes('/earnings'))             return 300
   if (path.includes('/insider'))              return 300
   if (path.includes('/senate'))               return 300
