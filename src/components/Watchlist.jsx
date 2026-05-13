@@ -4,10 +4,10 @@ import { useNotifications } from '../hooks/useNotifications.js'
 import { fetchTickerLite, fetchScore, fetchRating, fetchEarningsCalendar, fetchMarketMovers, fetchRedditTopStocks, fetchSectorPerformance } from '../hooks/useApi.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
-import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh, TickerAutocomplete } from './shared.jsx'
+import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh } from './shared.jsx'
 import MacroTicker from './MacroTicker.jsx'
 
-const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'; const CYAN='#00E5FF'
+const GREEN='#22c55e'; const RED='#ef4444'; const YELLOW='#f59e0b'; const G1='#888'; const G2='#0d0d0d'; const G4='#1e1e1e'; const DIM='#444'
 
 /* ── Price alerts stored in localStorage ── */
 const ALERTS_KEY = 'pulse_price_alerts_v1'
@@ -34,15 +34,16 @@ function SectorRow({ sectors }) {
       overflowX: 'auto',
       scrollbarWidth: 'none',
       WebkitOverflowScrolling: 'touch',
-      borderBottom: '1px solid #141414',
+      borderBottom: '1px solid #111',
+      borderTop: '1px solid #111',
       background: '#080808',
     }}>
       {sectors.map(({ s, l, changePct }) => {
-        const clr = changePct == null ? '#555' : changePct > 0 ? GREEN : changePct < 0 ? RED : '#555'
+        const clr = changePct == null ? '#333' : changePct > 0 ? GREEN : changePct < 0 ? RED : '#333'
         return (
-          <div key={s} style={{ flexShrink: 0, padding: '6px 10px 8px', borderRight: '1px solid #0e0e0e', minWidth: 72, textAlign: 'center' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.5rem', color: '#444', marginBottom: 2 }}>{l}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: clr, fontWeight: 600 }}>
+          <div key={s} style={{ flexShrink: 0, padding: '8px 12px', borderRight: '1px solid #111', minWidth: 76, textAlign: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.5rem', color: '#3a3a3a', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.5 }}>{l}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.66rem', color: clr, fontWeight: 600 }}>
               {changePct == null ? '—' : `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`}
             </div>
           </div>
@@ -76,13 +77,13 @@ function MoversCard({ movers, onNavigate }) {
   )
 
   return (
-    <div style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
-      <div style={{ flex: 1, background: '#080808', border: '1px solid #1a1a1a', borderRadius: 10, padding: '10px 12px' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', fontWeight: 700, color: GREEN, letterSpacing: '1px', marginBottom: 6 }}>▲ TOP GAINERS</div>
+    <div style={{ display: 'flex', gap: 8, margin: '16px 0' }}>
+      <div style={{ flex: 1, background: G2, border: '1px solid #161616', borderRadius: 10, padding: '12px 12px' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', fontWeight: 600, color: DIM, letterSpacing: '1.2px', marginBottom: 8, textTransform: 'uppercase' }}>Top Gainers</div>
         {top5g.map(item => <MoverRow key={item.ticker} item={item} isGainer />)}
       </div>
-      <div style={{ flex: 1, background: '#080808', border: '1px solid #1a1a1a', borderRadius: 10, padding: '10px 12px' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', fontWeight: 700, color: RED, letterSpacing: '1px', marginBottom: 6 }}>▼ TOP LOSERS</div>
+      <div style={{ flex: 1, background: G2, border: '1px solid #161616', borderRadius: 10, padding: '12px 12px' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', fontWeight: 600, color: DIM, letterSpacing: '1.2px', marginBottom: 8, textTransform: 'uppercase' }}>Top Losers</div>
         {top5l.map(item => <MoverRow key={item.ticker} item={item} isGainer={false} />)}
       </div>
     </div>
@@ -97,9 +98,9 @@ function RedditBuzzCard({ top, onNavigate }) {
   const list = showAll ? top : top.slice(0, 10)
 
   return (
-    <div style={{ background: '#080808', border: '1px solid #1a1a1a', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', fontWeight: 700, color: '#FF4500', letterSpacing: '1.5px', marginBottom: 8 }}>
-        🔥 REDDIT TRENDING TODAY
+    <div style={{ background: G2, border: '1px solid #161616', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.52rem', fontWeight: 600, color: DIM, letterSpacing: '1.2px', marginBottom: 10, textTransform: 'uppercase' }}>
+        Reddit Trending
       </div>
       {list.map((item, i) => {
         const barW = Math.max(4, Math.round((item.mentions / maxM) * 100))
@@ -115,10 +116,10 @@ function RedditBuzzCard({ top, onNavigate }) {
               borderBottom: i < list.length - 1 ? '1px solid #0e0e0e' : 'none',
             }}
           >
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', color: i < 3 ? '#FFD700' : '#333', width: 14, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', fontWeight: 700, color: '#ddd', width: 44, flexShrink: 0 }}>{item.ticker}</span>
-            <div style={{ flex: 1, height: 3, background: '#1a1a1a', borderRadius: 2 }}>
-              <div style={{ width: `${barW}%`, height: '100%', background: '#FF4500', borderRadius: 2, transition: 'width 0.3s' }} />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', color: i < 3 ? '#888' : '#2a2a2a', width: 14, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', fontWeight: 700, color: '#ccc', width: 44, flexShrink: 0 }}>{item.ticker}</span>
+            <div style={{ flex: 1, height: 2, background: '#1a1a1a', borderRadius: 2 }}>
+              <div style={{ width: `${barW}%`, height: '100%', background: '#333', borderRadius: 2, transition: 'width 0.3s' }} />
             </div>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.54rem', color: '#555', width: 32, textAlign: 'right', flexShrink: 0 }}>{item.mentions}</span>
             {delta != null && (
@@ -158,7 +159,7 @@ function ScoreBadge({ pct, verdict, fmpRating, piotroski, delta }) {
           {delta > 0 ? '↑+' : '↓'}{delta}
         </div>
       )}
-      {fmpRating && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',padding:'1px 5px',borderRadius:3,background:'rgba(0,229,255,0.1)',color:CYAN}}>{fmpRating}</div>}
+      {fmpRating && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',padding:'1px 5px',borderRadius:3,background:'rgba(255,255,255,0.06)',color:'#888'}}>{fmpRating}</div>}
       {piotroski!=null && <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',padding:'1px 5px',borderRadius:3,background:piotroski>=7?'rgba(0,200,5,0.15)':piotroski>=4?'rgba(255,215,0,0.1)':'rgba(255,80,0,0.1)',color:piotroski>=7?GREEN:piotroski>=4?YELLOW:RED}}>P:{piotroski}</div>}
     </div>
   )
@@ -182,7 +183,7 @@ function AlertModal({ ticker, currentPrice, alerts, onSave, onClose }) {
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div style={{ background:'#161616', border:`1px solid ${CYAN}40`, borderRadius:16, padding:20, width:'100%', maxWidth:340 }}>
-        <div style={{ fontSize:'0.72rem', color:CYAN, fontWeight:700, marginBottom:4, letterSpacing:0.5 }}>Price Alert — {ticker}</div>
+        <div style={{ fontSize:'0.72rem', color:'#aaa', fontWeight:700, marginBottom:4, letterSpacing:0.5 }}>Price Alert — {ticker}</div>
         {currentPrice && <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.7rem', color:G1, marginBottom:12 }}>Current: ${currentPrice.toFixed(2)}</div>}
         <div style={{ marginBottom:10 }}>
           <div style={{ fontSize:'0.6rem', color:G1, marginBottom:4, letterSpacing:0.5 }}>ALERT WHEN PRICE GOES ABOVE ($)</div>
@@ -234,8 +235,6 @@ export default function Watchlist({ onNavigateToDive }) {
   const [movers, setMovers]       = useState(null)
   const [redditTop, setRedditTop] = useState([])
   const [sectors, setSectors]     = useState([])
-  const [showAdd, setShowAdd]     = useState(false)
-  const [addInput, setAddInput]   = useState('')
 
   useEffect(() => {
     if (list.length > 0) handleRefresh()
@@ -388,8 +387,8 @@ export default function Watchlist({ onNavigateToDive }) {
       </div>
 
       {list.length === 0 ? (
-        <div style={{ textAlign:'center', padding:'30px 0', color:G1 }}>
-          <p style={{ fontSize:'0.82rem', lineHeight:1.8 }}>Nothing here yet.<br />Tap <strong style={{ color:CYAN }}>+</strong> to add tickers.</p>
+        <div style={{ textAlign:'center', padding:'30px 0', color:'#333' }}>
+          <p style={{ fontSize:'0.78rem', lineHeight:1.8, color:'#333' }}>No tickers added yet.</p>
         </div>
       ) : (
         <>
@@ -399,9 +398,9 @@ export default function Watchlist({ onNavigateToDive }) {
                 <button key={v} onClick={e => { e.stopPropagation(); setSortBy(v) }}
                   style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:'0.68rem',
                     fontFamily:'var(--font-mono)', cursor:'pointer',
-                    background: sortBy===v ? 'rgba(0,229,255,0.1)' : '#111',
-                    border: `1px solid ${sortBy===v ? 'rgba(0,229,255,0.4)' : '#252525'}`,
-                    color: sortBy===v ? '#00E5FF' : '#666' }}>
+                    background: sortBy===v ? '#1a1a1a' : '#0d0d0d',
+                    border: `1px solid ${sortBy===v ? '#333' : '#1a1a1a'}`,
+                    color: sortBy===v ? '#ccc' : '#444' }}>
                   {l}
                 </button>
               ))}
@@ -540,49 +539,7 @@ export default function Watchlist({ onNavigateToDive }) {
         />
       )}
 
-      {/* Add ticker modal */}
-      {showAdd && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:200, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
-          <div style={{ background:'#161616', border:`1px solid ${CYAN}30`, borderRadius:'20px 20px 0 0', padding:'20px 20px 32px', width:'100%', maxWidth:480 }}>
-            <div style={{ fontSize:'0.72rem', color:CYAN, fontWeight:700, marginBottom:14, letterSpacing:0.5 }}>Add to Watchlist</div>
-            <TickerAutocomplete
-              value={addInput}
-              onChange={v => setAddInput(v.toUpperCase())}
-              onSelect={s => { add(s.ticker); setAddInput(''); setShowAdd(false); setToast(`Added ${s.ticker}`) }}
-              placeholder="Search company or ticker…"
-            />
-            <div style={{ display:'flex', gap:8, marginTop:12 }}>
-              <button className="btn btn-primary" style={{ flex:1 }}
-                onClick={() => {
-                  const t = addInput.trim().toUpperCase()
-                  if (!t) return
-                  add(t); setAddInput(''); setShowAdd(false); setToast(`Added ${t}`)
-                }}>
-                Add
-              </button>
-              <button className="btn" style={{ flex:1 }} onClick={() => { setShowAdd(false); setAddInput('') }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
-
-      {/* Floating add button */}
-      <button
-        onClick={() => setShowAdd(true)}
-        style={{
-          position: 'fixed', bottom: 76, right: 16, zIndex: 50,
-          width: 52, height: 52, borderRadius: '50%',
-          background: CYAN, border: 'none', color: '#000',
-          fontSize: '1.6rem', fontWeight: 300, lineHeight: 1,
-          cursor: 'pointer',
-          boxShadow: '0 4px 20px rgba(0,229,255,0.35)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          WebkitTapHighlightColor: 'transparent',
-        }}
-        aria-label="Add ticker"
-      >+</button>
     </div>
     </PullToRefresh>
   )
