@@ -37,55 +37,102 @@ function MiniScore({ pct, verdict }) {
 /* ── Sector Heatmap ── */
 function SectorHeatmap({ sectorData, onNavigate }) {
   const [expanded, setExpanded] = useState(null)
+  const [view, setView] = useState('grid') // 'grid' | 'rotation'
   if (!sectorData || !sectorData.length) return null
 
   const maxAbs = Math.max(...sectorData.map(s => Math.abs(s.change)), 1)
+  const sorted = [...sectorData].sort((a, b) => b.change - a.change)
+  const leaders  = sorted.filter(s => s.change > 0)
+  const laggards = sorted.filter(s => s.change <= 0)
+
+  // Rotation signal — which type of market is this?
+  const topSectors = sorted.slice(0, 3).map(s => s.name)
+  let rotationSignal = ''
+  const isRiskOn  = topSectors.some(n => /Tech|Growth|Consumer Disc|Industrial/i.test(n))
+  const isDefensive = topSectors.some(n => /Util|Health|Staple|Real Estate/i.test(n))
+  if (isRiskOn && !isDefensive)        rotationSignal = 'Risk-On — growth & cyclicals leading'
+  else if (isDefensive && !isRiskOn)   rotationSignal = 'Risk-Off — defensives leading, caution'
+  else if (leaders.length >= laggards.length) rotationSignal = 'Broad advance — most sectors positive'
+  else                                 rotationSignal = 'Broad retreat — most sectors negative'
 
   return (
     <div className="card" style={{ marginBottom:16 }}>
-      <div style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', color:G1, marginBottom:10 }}>📊 Sector Performance</div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:6 }}>
-        {sectorData.map(s => {
-          const color = s.change >= 0 ? GREEN : RED
-          const intensity = Math.min(Math.abs(s.change) / maxAbs, 1)
-          const bg = s.change >= 0
-            ? `rgba(0,200,5,${0.06 + intensity * 0.18})`
-            : `rgba(255,80,0,${0.06 + intensity * 0.18})`
-          const sectorColor = SECTOR_COLORS[s.name] || G1
-          const isOpen = expanded === s.name
-          const stocks = SECTOR_STOCKS[s.name] || []
-
-          return (
-            <div key={s.name}>
-              <div
-                onClick={() => setExpanded(isOpen ? null : s.name)}
-                style={{ background:bg, border:`1px solid ${color}30`, borderRadius:8,
-                  padding:'10px 10px', cursor:'pointer', userSelect:'none' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <div style={{ fontSize:'0.64rem', color:sectorColor, fontWeight:600, lineHeight:1.3, flex:1, marginRight:4 }}>{s.name}</div>
-                  <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color, fontWeight:700, flexShrink:0 }}>
-                    {s.change >= 0 ? '+' : ''}{s.change.toFixed(2)}%
-                  </div>
-                </div>
-                <div style={{ fontSize:'0.54rem', color:G1, marginTop:3 }}>Tap to see stocks ›</div>
-              </div>
-              {isOpen && stocks.length > 0 && (
-                <div style={{ background:G2, border:`1px solid ${sectorColor}25`, borderRadius:'0 0 8px 8px',
-                  padding:'8px 10px', marginTop:-2, display:'flex', flexWrap:'wrap', gap:4 }}>
-                  {stocks.map(t => (
-                    <button key={t} onClick={() => onNavigate && onNavigate(t)}
-                      style={{ fontFamily:'var(--font-mono)', fontSize:'0.66rem', color:CYAN,
-                        background:`${CYAN}12`, border:`1px solid ${CYAN}30`, borderRadius:6,
-                        padding:'3px 8px', cursor:'pointer' }}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+        <div style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', color:G1 }}>Sector Performance</div>
+        <div style={{ display:'flex', gap:5 }}>
+          {[['grid','Grid'],['rotation','Rotation']].map(([v,l]) => (
+            <button key={v} onClick={() => setView(v)} style={{
+              padding:'3px 10px', borderRadius:20, border:`1px solid ${view===v ? CYAN+'60' : '#1a1a1a'}`,
+              background: view===v ? `${CYAN}10` : 'transparent',
+              color: view===v ? CYAN : '#555', fontFamily:'var(--font-mono)', fontSize:'0.56rem', cursor:'pointer'
+            }}>{l}</button>
+          ))}
+        </div>
       </div>
+
+      {view === 'rotation' ? (
+        <>
+          {rotationSignal && (
+            <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color: isRiskOn ? GREEN : isDefensive ? YELLOW : G1, marginBottom:12, paddingBottom:10, borderBottom:'1px solid #111' }}>
+              {isRiskOn ? '▲' : isDefensive ? '▽' : '◆'} {rotationSignal}
+            </div>
+          )}
+          {sorted.map((s, i) => {
+            const color = s.change >= 0 ? GREEN : RED
+            const barW  = Math.round(Math.abs(s.change) / maxAbs * 100)
+            const label = i === 0 ? 'LEADING' : i === sorted.length - 1 ? 'LAGGING' : ''
+            return (
+              <div key={s.name} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:7 }}>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color: '#666', width:14, textAlign:'right', flexShrink:0 }}>{i+1}</div>
+                <div style={{ fontSize:'0.62rem', color:'#aaa', width:90, flexShrink:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.name}</div>
+                <div style={{ flex:1, height:4, background:'#111', borderRadius:2 }}>
+                  <div style={{ width:`${barW}%`, height:'100%', background: color, borderRadius:2, opacity:0.7 }} />
+                </div>
+                <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color, width:48, textAlign:'right', flexShrink:0, fontWeight:600 }}>
+                  {s.change >= 0 ? '+' : ''}{s.change.toFixed(2)}%
+                </div>
+                {label && <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.48rem', color: color+'99', flexShrink:0, width:42 }}>{label}</div>}
+              </div>
+            )
+          })}
+        </>
+      ) : (
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:6 }}>
+          {sectorData.map(s => {
+            const color = s.change >= 0 ? GREEN : RED
+            const intensity = Math.min(Math.abs(s.change) / maxAbs, 1)
+            const bg = s.change >= 0 ? `rgba(0,200,5,${0.06 + intensity * 0.18})` : `rgba(255,80,0,${0.06 + intensity * 0.18})`
+            const sectorColor = SECTOR_COLORS[s.name] || G1
+            const isOpen = expanded === s.name
+            const stocks = SECTOR_STOCKS[s.name] || []
+            return (
+              <div key={s.name}>
+                <div onClick={() => setExpanded(isOpen ? null : s.name)}
+                  style={{ background:bg, border:`1px solid ${color}30`, borderRadius:8, padding:'10px', cursor:'pointer', userSelect:'none' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <div style={{ fontSize:'0.64rem', color:sectorColor, fontWeight:600, lineHeight:1.3, flex:1, marginRight:4 }}>{s.name}</div>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', color, fontWeight:700, flexShrink:0 }}>
+                      {s.change >= 0 ? '+' : ''}{s.change.toFixed(2)}%
+                    </div>
+                  </div>
+                  <div style={{ fontSize:'0.54rem', color:G1, marginTop:3 }}>Tap to see stocks ›</div>
+                </div>
+                {isOpen && stocks.length > 0 && (
+                  <div style={{ background:G2, border:`1px solid ${sectorColor}25`, borderRadius:'0 0 8px 8px',
+                    padding:'8px 10px', marginTop:-2, display:'flex', flexWrap:'wrap', gap:4 }}>
+                    {stocks.map(t => (
+                      <button key={t} onClick={() => onNavigate && onNavigate(t)}
+                        style={{ fontFamily:'var(--font-mono)', fontSize:'0.66rem', color:CYAN,
+                          background:`${CYAN}12`, border:`1px solid ${CYAN}30`, borderRadius:6,
+                          padding:'3px 8px', cursor:'pointer' }}>{t}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

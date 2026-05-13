@@ -585,8 +585,35 @@ function UnusualFlow({ ticker }) {
 
   const typeColor = t => t === 'call' ? GREEN : RED
 
+  // Call/Put ratio visualization
+  const calls = flow.filter(f => f.type === 'call')
+  const puts  = flow.filter(f => f.type === 'put')
+  const callVol = calls.reduce((s, f) => s + (f.volume || 0), 0)
+  const putVol  = puts.reduce((s,  f) => s + (f.volume || 0), 0)
+  const totalVol = callVol + putVol || 1
+  const callPct = Math.round(callVol / totalVol * 100)
+  const putPct  = 100 - callPct
+  const sentiment = callPct >= 65 ? 'Bullish flow' : putPct >= 65 ? 'Bearish flow' : 'Neutral flow'
+  const sentColor = callPct >= 65 ? GREEN : putPct >= 65 ? RED : YELLOW
+
   return (
     <div>
+      {/* Call/Put ratio bar */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+          <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:GREEN }}>Calls {callPct}%</span>
+          <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color:sentColor, fontWeight:600 }}>{sentiment}</span>
+          <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.6rem', color:RED }}>Puts {putPct}%</span>
+        </div>
+        <div style={{ height:6, background:'#1a1a1a', borderRadius:3, overflow:'hidden', display:'flex' }}>
+          <div style={{ width:`${callPct}%`, background:GREEN, opacity:0.7, transition:'width 0.4s' }} />
+          <div style={{ flex:1, background:RED, opacity:0.7 }} />
+        </div>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.54rem', color:'#444', marginTop:3 }}>
+          {callVol.toLocaleString()} call contracts · {putVol.toLocaleString()} put contracts · unusual activity
+        </div>
+      </div>
+
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
         <span style={{ background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.3)', borderRadius:6, padding:'3px 10px', fontSize:'0.7rem', color:YELLOW, fontFamily:'var(--font-mono)' }}>
           ⚡ {flow.length} unusual contract{flow.length!==1?'s':''} detected
