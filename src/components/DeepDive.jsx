@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchRedditTopStocks, fetchAISummary } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchAISummary } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES, SOURCE_TIERS } from '../utils/constants.js'
@@ -660,8 +660,6 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [analystEst,  setAnalystEst]  = useState([])
   const [unusualFlow, setUnusualFlow] = useState(null)
   const [diveTab,     setDiveTab]     = useState('overview')
-  const [redditTop,     setRedditTop]     = useState([])
-  const [redditLoading, setRedditLoading] = useState(false)
   const [aiSummary,     setAiSummary]     = useState(null)
   const [aiLoading,     setAiLoading]     = useState(false)
   const aiTickerRef = useRef('')
@@ -706,14 +704,6 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
       })
       .catch(() => {})
   }, [data?.ticker])
-
-  // Reddit sentiment — Apewisdom (no key, public API)
-  useEffect(() => {
-    setRedditLoading(true)
-    fetchRedditTopStocks()
-      .then(d => setRedditTop(Array.isArray(d) ? d : []))
-      .finally(() => setRedditLoading(false))
-  }, [])
 
   // Auto-trigger AI Brief when result is ready (cache-first, 2hr TTL)
   useEffect(() => {
@@ -1324,15 +1314,6 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           {/* ── NEWS TAB ── */}
           {diveTab==='news'&&(
             <>
-              {/* Reddit Buzz leaderboard */}
-              <SectionHeader>Reddit Buzz Today</SectionHeader>
-              {redditLoading
-                ? <div className="card" style={{padding:'14px 16px',marginBottom:10,textAlign:'center'}}>
-                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555'}}>Loading Reddit trends…</div>
-                  </div>
-                : <RedditBuzz top={redditTop} ticker={ticker} onNavigate={onNavigate} />
-              }
-
               <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>
               {data.news?.length ? (
                 <TieredNews

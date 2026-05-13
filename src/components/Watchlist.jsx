@@ -241,16 +241,16 @@ export default function Watchlist({ onNavigateToDive }) {
     if (list.length > 0) handleRefresh()
   }, []) // eslint-disable-line
 
-  // Load market data on mount
+  // Load market data on mount — allSettled so one failing doesn't kill the others
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       fetchMarketMovers(),
       fetchRedditTopStocks(),
       fetchSectorPerformance(),
     ]).then(([m, r, s]) => {
-      if (m) setMovers(m)
-      setRedditTop(Array.isArray(r) ? r : [])
-      setSectors(Array.isArray(s) ? s : [])
+      if (m.status === 'fulfilled' && m.value) setMovers(m.value)
+      if (r.status === 'fulfilled') setRedditTop(Array.isArray(r.value) ? r.value : [])
+      if (s.status === 'fulfilled') setSectors(Array.isArray(s.value) ? s.value : [])
     })
   }, [])
 
