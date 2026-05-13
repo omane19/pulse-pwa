@@ -295,6 +295,9 @@ export default function Screener({ onNavigateToDive }) {
   const [verdictFilter, setVerdictFilter] = useState(['BUY', 'HOLD', 'AVOID'])
   const [peMax, setPeMax] = useState(100)
   const [qualityDipOnly, setQualityDipOnly] = useState(false)
+  const [mcapTiers, setMcapTiers] = useState(['Small','Mid','Large','Mega'])
+  const [rsiMin, setRsiMin] = useState(0)
+  const [rsiMax, setRsiMax] = useState(100)
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -535,16 +538,30 @@ export default function Screener({ onNavigateToDive }) {
     return Object.entries(groups).sort((a, b) => b[1][0].result.pct - a[1][0].result.pct)
   }, [results, mode, topN, selCats, customTickers, ran])
 
+  const MCAP_RANGES = { Small:[0,2e9], Mid:[2e9,10e9], Large:[10e9,100e9], Mega:[100e9,Infinity] }
+  const toggleMcap = (tier) => setMcapTiers(prev => prev.includes(tier) ? prev.filter(t => t !== tier) : [...prev, tier])
+
   // Full mode filtered results
   const filtered = useMemo(() => {
     if (mode !== 'full') return []
+    const allMcap = mcapTiers.length === 4
     return results.filter(r => {
       if (!verdictFilter.includes(r.result.verdict)) return false
       if (peMax < 100 && r.result.pe && r.result.pe > peMax) return false
       if (qualityDipOnly && !r.result.isQualityDip) return false
+      if (!allMcap && mcapTiers.length > 0) {
+        const mc = r.mcap || 0
+        const inTier = mcapTiers.some(t => { const [lo, hi] = MCAP_RANGES[t]; return mc >= lo && mc < hi })
+        if (!inTier) return false
+      }
+      if (rsiMin > 0 || rsiMax < 100) {
+        const rsi = r.result.mom?.rsi
+        if (rsi == null) return false
+        if (rsi < rsiMin || rsi > rsiMax) return false
+      }
       return true
     })
-  }, [results, mode, verdictFilter, peMax, qualityDipOnly])
+  }, [results, mode, verdictFilter, peMax, qualityDipOnly, mcapTiers, rsiMin, rsiMax])
 
   // Summary stats for topN mode
   const topNFlat = topNGrouped ? topNGrouped.flatMap(([, items]) => items) : []

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchRedditTopStocks, fetchAISummary } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
