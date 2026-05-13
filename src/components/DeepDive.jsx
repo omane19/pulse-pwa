@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchRedditMentions, fetchAISummary } from '../hooks/useApi.js'
+import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchRedditTopStocks, fetchAISummary } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES, SOURCE_TIERS } from '../utils/constants.js'
@@ -73,6 +73,97 @@ function TieredNews({ articles, scoredNews, onTickerClick }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/* ── Reddit Buzz leaderboard ── */
+function RedditBuzz({ top, ticker, onNavigate }) {
+  const [showAll, setShowAll] = React.useState(false)
+  if (!top.length) return null
+
+  const maxM   = top[0]?.mentions || 1
+  const list   = showAll ? top : top.slice(0, 15)
+  const entry  = top.find(s => s.ticker === ticker)
+  const rank   = entry ? top.indexOf(entry) + 1 : null
+
+  const rankColor = r => r <= 3 ? '#FFD700' : r <= 10 ? '#C0C0C0' : r <= 25 ? '#CD7F32' : '#555'
+
+  return (
+    <div className="card" style={{ padding:'14px 16px', marginBottom:10 }}>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', fontWeight:700, letterSpacing:'1.5px', color:'#FF4500' }}>
+          🔥 REDDIT TRENDING TODAY
+        </div>
+        {rank
+          ? <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:CYAN, background:'rgba(0,229,255,0.1)', padding:'2px 8px', borderRadius:5 }}>
+              {ticker} #{rank}
+            </span>
+          : <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#555' }}>
+              {ticker} not in top 50
+            </span>
+        }
+      </div>
+
+      {/* Ranked rows */}
+      {list.map((s, i) => {
+        const r       = i + 1
+        const isMe    = s.ticker === ticker
+        const barPct  = Math.max(4, Math.round(s.mentions / maxM * 100))
+        const delta   = s.mentions != null && s.mentions_24h_ago != null
+          ? s.mentions - s.mentions_24h_ago
+          : (s.mentions24h != null ? s.mentions - s.mentions24h : null)
+        const dColor  = delta == null ? '#555' : delta > 0 ? GREEN : delta < 0 ? RED : '#555'
+
+        return (
+          <div
+            key={s.ticker}
+            onClick={() => onNavigate && onNavigate(s.ticker)}
+            style={{
+              display:'flex', alignItems:'center', gap:6,
+              padding:'5px 6px', marginBottom:1,
+              borderRadius:7, cursor:'pointer',
+              background: isMe ? 'rgba(0,229,255,0.07)' : 'transparent',
+              border: isMe ? '1px solid rgba(0,229,255,0.2)' : '1px solid transparent',
+              WebkitTapHighlightColor:'transparent',
+            }}
+          >
+            <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:rankColor(r), width:22, textAlign:'right', flexShrink:0 }}>
+              #{r}
+            </span>
+            <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.7rem', fontWeight:700,
+              color: isMe ? CYAN : '#e0e0e0', width:46, flexShrink:0, letterSpacing:0.5 }}>
+              {s.ticker}
+            </span>
+            <div style={{ flex:1, height:3, background:'#1a1a1a', borderRadius:2 }}>
+              <div style={{ height:'100%', width:`${barPct}%`, background: isMe ? CYAN : rankColor(r), borderRadius:2, opacity:0.7 }} />
+            </div>
+            <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#666', width:42, textAlign:'right', flexShrink:0 }}>
+              {s.mentions?.toLocaleString()}
+            </span>
+            {delta != null && (
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:dColor, width:34, textAlign:'right', flexShrink:0 }}>
+                {delta > 0 ? '+' : ''}{delta}
+              </span>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Show more / less */}
+      {top.length > 15 && (
+        <button onClick={e => { e.stopPropagation(); setShowAll(v => !v) }}
+          style={{ width:'100%', marginTop:8, padding:'5px 0', background:'transparent',
+            border:'1px solid #252525', borderRadius:6, color:'#555',
+            fontFamily:'var(--font-mono)', fontSize:'0.58rem', cursor:'pointer' }}>
+          {showAll ? '▲ Show less' : `▼ Show all ${top.length}`}
+        </button>
+      )}
+
+      <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#333', marginTop:10, paddingTop:8, borderTop:'1px solid #1a1a1a' }}>
+        Apewisdom · r/wallstreetbets, r/stocks, r/investing, r/options · updates hourly · tap any row to dive
+      </div>
     </div>
   )
 }
@@ -654,7 +745,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [analystEst,  setAnalystEst]  = useState([])
   const [unusualFlow, setUnusualFlow] = useState(null)
   const [diveTab,     setDiveTab]     = useState('overview')
-  const [redditData,    setRedditData]    = useState(null)
+  const [redditTop,     setRedditTop]     = useState([])
   const [redditLoading, setRedditLoading] = useState(false)
   const [aiSummary,     setAiSummary]     = useState(null)
   const [aiLoading,     setAiLoading]     = useState(false)
@@ -697,12 +788,11 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
 
   // Reddit sentiment — Apewisdom (no key, public API)
   useEffect(() => {
-    if (!ticker) return
-    setRedditData(null); setRedditLoading(true)
-    fetchRedditMentions(ticker)
-      .then(d => setRedditData(d || null))
+    setRedditLoading(true)
+    fetchRedditTopStocks()
+      .then(d => setRedditTop(Array.isArray(d) ? d : []))
       .finally(() => setRedditLoading(false))
-  }, [ticker])
+  }, [])
 
   const handleAnalyze=()=>{ const t=input.trim().toUpperCase(); if(!t)return; setTicker(t); fetch(t) }
   const handleRefresh = useCallback(async () => { if(ticker) { await fetch(ticker) } }, [ticker, fetch])
@@ -1340,107 +1430,14 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
           {/* ── NEWS TAB ── */}
           {diveTab==='news'&&(
             <>
-              {/* Reddit Sentiment */}
-              <SectionHeader>Reddit Sentiment · r/wallstreetbets · r/stocks · r/investing</SectionHeader>
-              {(()=>{
-                const rankColor = redditData
-                  ? redditData.rank<=10?'#FFD700':redditData.rank<=25?'#C0C0C0':redditData.rank<=50?'#CD7F32':'#888'
-                  : '#555'
-                const mentionDelta = redditData?.mentions24h!=null
-                  ? redditData.mentions - redditData.mentions24h : null
-                const mentionGrowth = mentionDelta!=null&&redditData.mentions24h>0
-                  ? Math.round(mentionDelta/redditData.mentions24h*100) : null
-                const engagement = redditData?.upvotes&&redditData?.mentions
-                  ? (redditData.upvotes/redditData.mentions).toFixed(1) : null
-                const engLabel = engagement
-                  ? parseFloat(engagement)>=3?'High quality':parseFloat(engagement)>=1?'Moderate':'High noise' : null
-                const engColor = engagement
-                  ? parseFloat(engagement)>=3?GREEN:parseFloat(engagement)>=1?YELLOW:RED : '#888'
-
-                // Interpretation text
-                let interpretation = ''
-                if (!redditData) {
-                  interpretation = `${ticker} is not in the top 100 Reddit-mentioned stocks today. Institutional money is driving this move, not retail. This can be a positive sign — less crowded, less liable to sharp retail-driven reversals.`
-                } else if (redditData.rank<=10 && mentionDelta!=null && mentionDelta>0) {
-                  interpretation = `${ticker} is in the top 10 most-discussed stocks on Reddit with accelerating mentions (+${mentionDelta} vs yesterday). Heavy retail FOMO is present — elevated crowding risk. Contrarian signal: extreme retail enthusiasm at peaks often precedes pullbacks.`
-                } else if (redditData.rank<=10) {
-                  interpretation = `${ticker} is in the top 10 Reddit stocks but mention volume is flat or declining. Peak retail attention may have passed — watch for momentum fading as retail rotates to the next story.`
-                } else if (redditData.rank<=25 && mentionDelta!=null && mentionDelta>0) {
-                  interpretation = `${ticker} is gaining Reddit traction (rank #${redditData.rank}, up ${mentionDelta} mentions). Early-stage retail discovery phase — this can sustain momentum if fundamentals support the narrative.`
-                } else if (redditData.rank<=50) {
-                  interpretation = `${ticker} has moderate Reddit presence at rank #${redditData.rank}. On the retail radar but not crowded — a balanced signal. Retail interest is real but not yet at risk of blowoff.`
-                } else {
-                  interpretation = `${ticker} has low Reddit visibility (rank #${redditData.rank}). Limited retail crowding — price action is driven by institutional positioning, earnings, or macro. Less pump risk, more fundamental-driven.`
-                }
-
-                const sourceNote = (
-                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.54rem',color:'#444',paddingTop:8,borderTop:'1px solid #1a1a1a'}}>
-                    Source: Apewisdom · r/wallstreetbets, r/stocks, r/investing, r/options · updates hourly
+              {/* Reddit Buzz leaderboard */}
+              <SectionHeader>Reddit Buzz Today</SectionHeader>
+              {redditLoading
+                ? <div className="card" style={{padding:'14px 16px',marginBottom:10,textAlign:'center'}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555'}}>Loading Reddit trends…</div>
                   </div>
-                )
-
-                // Loading
-                if (redditLoading) return (
-                  <div className="card" style={{padding:'14px 16px',marginBottom:10,textAlign:'center'}}>
-                    <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555'}}>Checking Reddit sentiment…</div>
-                  </div>
-                )
-
-                // Not trending — clean minimal card, no dashes
-                if (!redditData) return (
-                  <div className="card" style={{padding:'14px 16px',marginBottom:10}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',fontWeight:700,color:'#555',background:'rgba(255,255,255,0.04)',border:'1px solid #252525',borderRadius:8,padding:'6px 12px'}}>
-                        Not trending
-                      </div>
-                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.64rem',color:'#555'}}>{ticker} · not in top 100</div>
-                    </div>
-                    <div style={{fontSize:'0.78rem',color:'#B2B2B2',lineHeight:1.8,marginBottom:10}}>{interpretation}</div>
-                    {sourceNote}
-                  </div>
-                )
-
-                // Trending — full card with rank badge + stats
-                return(
-                  <div className="card" style={{padding:'14px 16px',marginBottom:10}}>
-                    <div style={{display:'flex',gap:12,alignItems:'stretch',marginBottom:12}}>
-                      {/* Rank badge */}
-                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',width:64,flexShrink:0,background:'rgba(255,255,255,0.03)',borderRadius:10,padding:'10px 4px',border:`1px solid ${rankColor}40`}}>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#555',marginBottom:4,letterSpacing:1}}>RANK</div>
-                        <div style={{fontFamily:'var(--font-mono)',fontSize:'1.5rem',fontWeight:900,color:rankColor,lineHeight:1}}>{`#${redditData.rank}`}</div>
-                        {redditData.rank<=10&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#FFD700',marginTop:3}}>TOP 10</div>}
-                        {redditData.rank>10&&redditData.rank<=25&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#C0C0C0',marginTop:3}}>TOP 25</div>}
-                        {redditData.rank>25&&redditData.rank<=50&&<div style={{fontFamily:'var(--font-mono)',fontSize:'0.44rem',color:'#CD7F32',marginTop:3}}>TOP 50</div>}
-                      </div>
-                      {/* Stats */}
-                      <div style={{flex:1,display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
-                        {[
-                          ['Mentions', String(redditData.mentions), CYAN],
-                          ['24h Change', mentionDelta!=null?`${mentionDelta>=0?'+':''}${mentionDelta}${mentionGrowth!=null?` (${mentionGrowth>=0?'+':''}${mentionGrowth}%)`:''}`:'—', mentionDelta!=null&&mentionDelta>0?GREEN:mentionDelta!=null&&mentionDelta<0?RED:'#888'],
-                          ['Engagement', engagement?`${engagement}x upvotes/mention`:'—', engColor],
-                          ['Quality', engLabel||'—', engColor],
-                        ].map(([l,v,c])=>(
-                          <div key={l} style={{background:'rgba(255,255,255,0.03)',borderRadius:7,padding:'7px 8px'}}>
-                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.48rem',color:'#555',marginBottom:3,letterSpacing:0.5}}>{l}</div>
-                            <div style={{fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:c,fontWeight:700}}>{v}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    {redditData.rankPrev!=null&&(
-                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.6rem',color:'#888',marginBottom:10,paddingBottom:10,borderBottom:'1px solid #1a1a1a'}}>
-                        {redditData.rank < redditData.rankPrev
-                          ? `▲ Up from #${redditData.rankPrev} yesterday — retail interest accelerating`
-                          : redditData.rank > redditData.rankPrev
-                          ? `▼ Down from #${redditData.rankPrev} yesterday — retail rotating out`
-                          : `→ Steady at #${redditData.rank} — stable retail attention`}
-                      </div>
-                    )}
-                    <div style={{fontSize:'0.78rem',color:'#B2B2B2',lineHeight:1.8,marginBottom:10}}>{interpretation}</div>
-                    {sourceNote}
-                  </div>
-                )
-              })()}
+                : <RedditBuzz top={redditTop} ticker={ticker} onNavigate={onNavigate} />
+              }
 
               <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>
               {data.news?.length ? (

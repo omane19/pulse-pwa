@@ -1313,6 +1313,33 @@ export async function fetchMacroTicker() {
   return map
 }
 
+/* ── Sector ETF performance — 11 SPDR sectors ── */
+export const SECTOR_ETFS = [
+  { s:'XLK',  l:'Tech'       },
+  { s:'XLF',  l:'Financials' },
+  { s:'XLE',  l:'Energy'     },
+  { s:'XLV',  l:'Health'     },
+  { s:'XLI',  l:'Industrial' },
+  { s:'XLY',  l:'Cons.Disc'  },
+  { s:'XLP',  l:'Cons.Stapl' },
+  { s:'XLRE', l:'Real Estate'},
+  { s:'XLU',  l:'Utilities'  },
+  { s:'XLB',  l:'Materials'  },
+  { s:'XLC',  l:'Comm.'      },
+]
+
+export async function fetchSectorPerformance() {
+  const results = await Promise.all(
+    SECTOR_ETFS.map(sec => fmp(`/quote?symbol=${sec.s}`, 300000))
+  )
+  return SECTOR_ETFS.map((sec, idx) => {
+    const q = Array.isArray(results[idx]) ? results[idx][0] : results[idx]
+    return {
+      ...sec,
+      changePct: q?.changesPercentage ?? q?.changePercentage ?? null,
+    }
+  })
+}
 
 /* ══════════════════════════════════════════
    REAL OPTIONS CHAIN — via Polygon.io free API
