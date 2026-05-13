@@ -3,10 +3,8 @@ import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSi
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES, SOURCE_TIERS } from '../utils/constants.js'
-import { trackSignal } from '../hooks/useSignalLog.js'
 import Chart from './Chart.jsx'
 import { VerdictPill, FactorBars, MetricCell, NewsCard, EarningsWarning, LoadingBar, SectionHeader, Toast, PullToRefresh } from './shared.jsx'
-import { loadSignals } from '../hooks/useSignalLog.js'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'
 
@@ -548,46 +546,6 @@ function PositionSizing({ verdict, price, capital=10000, allocPct=45 }) {
   )
 }
 
-/* ── Verdict Card ─────────────────────────────────────────────── */
-function ScoreSparkline({ ticker, currentScore }) {
-  const [history, setHistory] = React.useState([])
-  React.useEffect(() => {
-    loadSignals().then(signals => {
-      const past = signals
-        .filter(s => s.ticker === ticker && s.score != null)
-        .slice(-6)
-        .map(s => ({ score: s.score, date: new Date(s.tracked_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}), verdict: s.verdict }))
-      setHistory(past)
-    }).catch(() => {})
-  }, [ticker])
-  if (history.length < 2) return null
-  const scores = [...history.map(h => h.score), currentScore]
-  const min = Math.min(...scores) - 5; const max = Math.max(...scores) + 5
-  const W = 120; const H = 28
-  const pts = scores.map((s, i) => {
-    const x = (i / (scores.length - 1)) * W
-    const y = H - ((s - min) / (max - min)) * H
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  }).join(' ')
-  const lastColor = currentScore > history[history.length-1].score ? '#00C805' : currentScore < history[history.length-1].score ? '#FF5000' : '#FFD700'
-  return (
-    <div style={{marginTop:8,marginBottom:4}}>
-      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',color:'#555',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Score History</div>
-      <svg width={W} height={H+4} style={{overflow:'visible'}}>
-        <polyline points={pts} fill="none" stroke="#333" strokeWidth={1.5}/>
-        <polyline points={pts.split(' ').slice(-2).join(' ')} fill="none" stroke={lastColor} strokeWidth={2}/>
-        {scores.map((s,i) => {
-          const x = (i / (scores.length-1)) * W
-          const y = H - ((s - min) / (max - min)) * H
-          const isLast = i === scores.length - 1
-          return <circle key={i} cx={x} cy={y} r={isLast ? 3 : 2} fill={isLast ? lastColor : '#333'} stroke={isLast ? lastColor : 'none'} />
-        })}
-      </svg>
-      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.55rem',color:'#444',marginTop:2}}>{history[0].date} → now</div>
-    </div>
-  )
-}
-
 /* ── Data Quality & Staleness Badge ──────────────────────────────────────── */
 function DataQualityBadge({ result }) {
   if (!result) return null
@@ -656,7 +614,6 @@ function VerdictCard({ result, ticker }) {
         <div style={{height:3,borderRadius:3,width:`${conviction}%`,background:`linear-gradient(90deg,${color},${color}88)`,transition:'width .8s'}}/>
       </div>
       <div style={{fontFamily:'var(--font-mono)',fontSize:'0.62rem',color:'#B2B2B2',marginBottom:8}}>Conviction {conviction.toFixed(0)}% · {factorsAgree}/{Object.keys(scores).length} factors agree</div>
-      {ticker && <ScoreSparkline ticker={ticker} currentScore={pct} />}
       <div style={{maxWidth:360,margin:'0 auto',textAlign:'left',marginBottom:12}}>
         {allReasons.slice(0,8).map((r,i)=><div key={i} style={{fontSize:'0.78rem',color:'#B2B2B2',padding:'4px 0',borderBottom:'1px solid #1A1A1A',lineHeight:1.6}}>· {r}</div>)}
       </div>
@@ -674,61 +631,6 @@ function VerdictCard({ result, ticker }) {
   )
 }
 
-/* ── Signal History Section ── */
-function SignalHistorySection({ ticker, currentPrice }) {
-  const [history, setHistory] = React.useState([])
-  React.useEffect(() => {
-    if (!ticker) return
-    loadSignals().then(signals => {
-      const past = signals
-        .filter(s => s.ticker === ticker)
-        .slice(0, 8)
-        .map(s => ({
-          id: s.id, verdict: s.verdict, score: s.score,
-          price: s.price_at_signal,
-          ts: s.tracked_at, return30: s.return_30d
-        }))
-      setHistory(past)
-    }).catch(() => {})
-  }, [ticker])
-
-  if (!ticker || !history.length) return null
-  const GREEN = '#00C805'; const RED = '#FF5000'; const GOLD = '#FFD700'; const G4 = '#252525'
-  return (
-    <>
-      <SectionHeader>Your Signal History — {ticker}</SectionHeader>
-      <div className="card" style={{ padding: '0 16px' }}>
-        {history.map((h, i) => {
-          const change = currentPrice && h.price ? ((currentPrice - h.price) / h.price * 100) : null
-          const color = h.verdict === 'BUY' ? GREEN : h.verdict === 'AVOID' ? RED : GOLD
-          const label = new Date(h.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          return (
-            <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < history.length - 1 ? `1px solid ${G4}` : 'none' }}>
-              <div>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color, marginRight: 8, fontWeight: 700 }}>{h.verdict}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: '#B2B2B2' }}>{label}</span>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>Score {h.score}</div>
-                {change != null && (
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: change >= 0 ? GREEN : RED, marginTop: 2 }}>
-                    ${h.price?.toFixed(2)} → {change >= 0 ? '+' : ''}{change.toFixed(1)}%
-                  </div>
-                )}
-                {h.return30 != null && change == null && (
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: h.return30 >= 0 ? GREEN : RED, marginTop: 2 }}>
-                    30d: {h.return30 >= 0 ? '+' : ''}{h.return30.toFixed(1)}%
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </>
-  )
-}
-
 /* ── Main ─────────────────────────────────────────────────────── */
 export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate }) {
   const [input,  setInput]  = useState(initialTicker || 'AAPL')
@@ -741,7 +643,6 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [result,      setResult]      = useState(null)
   const [toast,       setToast]       = useState(null)
   const [smartMoney,  setSmartMoney]  = useState(null)
-  const [tracked,     setTracked]     = useState(false)
   const [analystEst,  setAnalystEst]  = useState([])
   const [unusualFlow, setUnusualFlow] = useState(null)
   const [diveTab,     setDiveTab]     = useState('overview')
@@ -754,7 +655,7 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
     if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
   }, [initialTicker, diveVersion])
 
-  useEffect(() => { setTracked(false); setDiveTab('overview'); setAiSummary(null) }, [ticker])
+  useEffect(() => { setDiveTab('overview'); setAiSummary(null) }, [ticker])
 
   // Re-score whenever base data or smart money updates
   useEffect(() => {
@@ -797,23 +698,6 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const handleAnalyze=()=>{ const t=input.trim().toUpperCase(); if(!t)return; setTicker(t); fetch(t) }
   const handleRefresh = useCallback(async () => { if(ticker) { await fetch(ticker) } }, [ticker, fetch])
   const handleWL=()=>{ if(has(ticker)){remove(ticker);setToast(`Removed ${ticker}`)}else{add(ticker);setToast(`Added ${ticker} to watchlist`)} }
-
-  const handleTrack = useCallback(async () => {
-    if (!result || !data?.quote?.c) return
-    // Fetch SPY price at signal time for benchmark comparison
-    const spyQuote = await fetchQuote('SPY').catch(() => null)
-    await trackSignal({
-      ticker:   data.ticker,
-      verdict:  result.verdict,
-      score:    result.pct,
-      price:    data.quote.c,
-      spyPrice: spyQuote?.c || null,
-      factors:  result.scores,
-      reasons:  result.reasons,
-    })
-    setTracked(true)
-    setToast(`📊 ${data.ticker} tracked — check Track Record tab`)
-  }, [result, data])
 
   const q=data?.quote; const price=q?.c; const chg=q?.dp||0
   const mt=data?.metrics||{}; const av=mt._av||{}; const ma50=data?.candles?.ma50
@@ -919,14 +803,9 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
 
           {/* Action buttons — always visible */}
           <div style={{display:'flex',justifyContent:'flex-end',marginBottom:4}}>
-            <div style={{display:'flex',gap:6}}>
-              <button className={`btn ${tracked?'btn-ghost':'btn-secondary'}`} style={{width:'auto',padding:'7px 14px',fontSize:'0.74rem',opacity:tracked?0.5:1}} onClick={handleTrack} disabled={tracked}>
-                {tracked?'✓ Tracked':'📊 Track Call'}
-              </button>
-              <button className={`btn ${inWL?'btn-danger':'btn-ghost'}`} style={{width:'auto',padding:'7px 14px',fontSize:'0.74rem'}} onClick={handleWL}>
-                {inWL?'− Watchlist':'+ Watchlist'}
-              </button>
-            </div>
+            <button className={`btn ${inWL?'btn-danger':'btn-ghost'}`} style={{width:'auto',padding:'7px 14px',fontSize:'0.74rem'}} onClick={handleWL}>
+              {inWL?'− Watchlist':'+ Watchlist'}
+            </button>
           </div>
 
           {/* ── SCORE (OVERVIEW) TAB ── */}
@@ -1044,7 +923,6 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               <SectionHeader>Position Sizing</SectionHeader>
               <PositionSizing verdict={result.verdict} price={price}/>
 
-              <SignalHistorySection ticker={ticker} currentPrice={price}/>
             </>
           )}
 

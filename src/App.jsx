@@ -6,7 +6,6 @@ import Screener from './components/Screener.jsx'
 import Flow from './components/Flow.jsx'
 import Macro from './components/Macro.jsx'
 import Learn from './components/Learn.jsx'
-import TrackRecord from './components/TrackRecord.jsx'
 import Portfolio from './components/Portfolio.jsx'
 import Backtest from './components/Backtest.jsx'
 import Onboarding from './components/Onboarding.jsx'
@@ -28,9 +27,6 @@ function IconFlow({ active }) {
 function IconMacro({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>)
 }
-function IconTrack({ active }) {
-  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>)
-}
 function IconPortfolio({ active }) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active?2.2:1.7} strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>)
 }
@@ -51,7 +47,6 @@ const TABS = [
   { id:'screen',    label:'Screen',    icon:IconScreen },
   { id:'flow',      label:'Flow',      icon:IconFlow },
   { id:'macro',     label:'Macro',     icon:IconMacro },
-  { id:'track',     label:'Track',     icon:IconTrack },
   { id:'portfolio', label:'Portfolio', icon:IconPortfolio },
   { id:'backtest',  label:'Backtest',  icon:IconBacktest },
 ]
@@ -106,7 +101,6 @@ export default function App() {
         <div style={{display: activeTab==='screen'    ? 'contents' : 'none'}}><ErrorBoundary><Screener onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
         <div style={{display: activeTab==='flow'      ? 'contents' : 'none'}}><ErrorBoundary><Flow onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
         <div style={{display: activeTab==='macro'     ? 'contents' : 'none'}}><ErrorBoundary><Macro onNavigate={navigateToDive} /></ErrorBoundary></div>
-        <div style={{display: activeTab==='track'     ? 'contents' : 'none'}}><ErrorBoundary><TrackRecord /></ErrorBoundary></div>
         <div style={{display: activeTab==='portfolio' ? 'contents' : 'none'}}><ErrorBoundary><Portfolio onNavigateToDive={navigateToDive} /></ErrorBoundary></div>
         <div style={{display: activeTab==='backtest'  ? 'contents' : 'none'}}><ErrorBoundary><Backtest /></ErrorBoundary></div>
       </main>
