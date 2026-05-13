@@ -5,6 +5,7 @@ import { fetchTickerLite, fetchScore, fetchRating, fetchEarningsCalendar } from 
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
 import { TICKER_NAMES } from '../utils/constants.js'
 import { VerdictPill, SignalBar, LoadingBar, Toast, PullToRefresh, TickerAutocomplete } from './shared.jsx'
+import MacroTicker from './MacroTicker.jsx'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const G1='#B2B2B2'; const G2='#111'; const G4='#252525'; const CYAN='#00E5FF'
 
@@ -218,7 +219,12 @@ export default function Watchlist({ onNavigateToDive }) {
 
   return (
     <PullToRefresh onRefresh={handleRefresh} enabled={list.length > 0}>
-    <div className="page">
+    <div className="page" style={{ paddingTop: 0 }}>
+
+      {/* Market overview — sticky at top of Watch tab */}
+      <div style={{ margin: '-16px -16px 14px' }}>
+        <MacroTicker />
+      </div>
 
       {/* Earnings this week banner */}
       {earningsThisWeek.length > 0 && (

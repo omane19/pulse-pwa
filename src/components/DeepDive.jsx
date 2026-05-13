@@ -2,13 +2,80 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useTickerData, fetchFMPCongressional, fetchFMPInsider, computeClusterSignal, hasKeys, fetchAnalystEstimates, fetchQuote, fetchUnusualFlow, fetchTickerSearch, fetchRedditMentions, fetchAISummary } from '../hooks/useApi.js'
 import { useWatchlist } from '../hooks/useWatchlist.js'
 import { scoreAsset, fmtMcap } from '../utils/scoring.js'
-import { TICKER_NAMES } from '../utils/constants.js'
+import { TICKER_NAMES, SOURCE_TIERS } from '../utils/constants.js'
 import { trackSignal } from '../hooks/useSignalLog.js'
 import Chart from './Chart.jsx'
 import { VerdictPill, FactorBars, MetricCell, NewsCard, EarningsWarning, LoadingBar, SectionHeader, Toast, PullToRefresh } from './shared.jsx'
 import { loadSignals } from '../hooks/useSignalLog.js'
 
 const GREEN='#00C805'; const RED='#FF5000'; const YELLOW='#FFD700'; const CYAN='#00E5FF'
+
+/* ── Tiered news groups — collapsible by source quality ── */
+function TieredNews({ articles, scoredNews, onTickerClick }) {
+  // T1/T2 open by default (credible), T3/T4 collapsed
+  const [open, setOpen] = React.useState({ 1:true, 2:true, 3:false, 4:false })
+
+  // Build groups: tier → [{ article, sc }]
+  const groups = { 1:[], 2:[], 3:[], 4:[] }
+  articles.forEach((art, i) => {
+    const sc  = scoredNews[i] || { tier: 4 }
+    const t   = sc.tier >= 1 && sc.tier <= 4 ? sc.tier : 4
+    groups[t].push({ art, sc })
+  })
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      {[1, 2, 3, 4].map(tier => {
+        const items = groups[tier]
+        if (!items.length) return null
+        const info   = SOURCE_TIERS[tier]
+        const isOpen = open[tier]
+        const clr    = info.color
+
+        return (
+          <div key={tier} style={{ marginBottom: 6 }}>
+            {/* Group header */}
+            <div
+              onClick={() => setOpen(prev => ({ ...prev, [tier]: !prev[tier] }))}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 16px', cursor: 'pointer',
+                background: `${clr}08`,
+                border: `1px solid ${clr}25`,
+                borderRadius: isOpen ? '10px 10px 0 0' : 10,
+                WebkitTapHighlightColor: 'transparent',
+                userSelect: 'none',
+              }}
+            >
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', fontWeight:700, color: clr,
+                background:`${clr}18`, padding:'2px 7px', borderRadius:5 }}>
+                T{tier}
+              </span>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.62rem', color: clr, flex:1 }}>
+                {info.label}
+              </span>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#555' }}>
+                {items.length} article{items.length !== 1 ? 's' : ''}
+              </span>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.52rem', color:'#444', marginLeft:4 }}>
+                {isOpen ? '▾' : '▸'}
+              </span>
+            </div>
+
+            {/* Articles */}
+            {isOpen && (
+              <div className="card" style={{ padding:'0 16px', borderRadius:'0 0 10px 10px', marginTop:0 }}>
+                {items.map(({ art, sc }, i) => (
+                  <NewsCard key={i} article={art} sc={sc} onTickerClick={onTickerClick} />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 /* ── Manipulation flags ───────────────────────────────────────── */
 function getFlags(news, scoredNews, insider, quote) {
@@ -1376,11 +1443,15 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               })()}
 
               <SectionHeader>News · {data.news?.length||0} Articles</SectionHeader>
-              <div className="card" style={{padding:'0 16px'}}>
-                {data.news?.length
-                  ?data.news.map((art,i)=><NewsCard key={i} article={art} sc={result.scoredNews?.[i]||{tier:4}} onTickerClick={t=>{onNavigate&&onNavigate(t)}}/>)
-                  :<div style={{color:'#B2B2B2',textAlign:'center',padding:24,fontSize:'0.84rem'}}>No news in past 10 days.</div>}
-              </div>
+              {data.news?.length ? (
+                <TieredNews
+                  articles={data.news}
+                  scoredNews={result.scoredNews||[]}
+                  onTickerClick={t => onNavigate && onNavigate(t)}
+                />
+              ) : (
+                <div style={{color:'#B2B2B2',textAlign:'center',padding:24,fontSize:'0.84rem'}}>No news in past 10 days.</div>
+              )}
               <div style={{height:16}}/>
             </>
           )}
