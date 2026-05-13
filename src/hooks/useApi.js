@@ -1289,21 +1289,16 @@ export const MACRO_SECTIONS = {
 }
 
 export async function fetchMacroTicker() {
-  // Use the same single-symbol fmp() call that fetchQuote uses — known to work.
-  // All fetches run in parallel; each is cached 5 min so repeat renders are instant.
   const allSymbols = [...new Set(
     Object.values(MACRO_SECTIONS).flatMap(sec => sec.items.map(i => i.s))
   )]
-
-  const results = await Promise.all(
-    allSymbols.map(s => fmp(`/quote?symbol=${s}`, 300000))
-  )
-
+  // Single batch call instead of N individual calls — avoids proxy overload
+  const d = await fmp(`/quote?symbol=${allSymbols.join(',')}`, 300000)
+  const arr = Array.isArray(d) ? d : (d ? [d] : [])
   const map = {}
-  results.forEach((d, idx) => {
-    const q = Array.isArray(d) ? d[0] : d
-    if (q?.price != null) {
-      map[allSymbols[idx]] = {
+  arr.forEach(q => {
+    if (q?.symbol && q.price != null) {
+      map[q.symbol] = {
         price:     q.price,
         changePct: q.changesPercentage ?? q.changePercentage ?? 0,
         change:    q.change ?? 0,
@@ -1329,16 +1324,15 @@ export const SECTOR_ETFS = [
 ]
 
 export async function fetchSectorPerformance() {
-  const results = await Promise.all(
-    SECTOR_ETFS.map(sec => fmp(`/quote?symbol=${sec.s}`, 300000))
-  )
-  return SECTOR_ETFS.map((sec, idx) => {
-    const q = Array.isArray(results[idx]) ? results[idx][0] : results[idx]
-    return {
-      ...sec,
-      changePct: q?.changesPercentage ?? q?.changePercentage ?? null,
-    }
-  })
+  const symbols = SECTOR_ETFS.map(s => s.s).join(',')
+  const d = await fmp(`/quote?symbol=${symbols}`, 300000)
+  const arr = Array.isArray(d) ? d : (d ? [d] : [])
+  const bySymbol = {}
+  arr.forEach(q => { if (q?.symbol) bySymbol[q.symbol] = q })
+  return SECTOR_ETFS.map(sec => ({
+    ...sec,
+    changePct: bySymbol[sec.s]?.changesPercentage ?? bySymbol[sec.s]?.changePercentage ?? null,
+  }))
 }
 
 /* ══════════════════════════════════════════
@@ -1559,13 +1553,13 @@ export async function fetchRedditTopStocks() {
   try {
     const pages = await Promise.all(
       [1, 2].map(p =>
-        fetch(`https://apewisdom.io/api/v1.0/filter/all-stocks/page/${p}`)
-          .then(r => (r.ok ? r.json() : null))
+        go(`/api/proxy?provider=apewisdom&path=${encodeURIComponent(`/api/v1.0/filter/all-stocks/page/${p}`)}`)
+          .then(d => d)
           .catch(() => null)
       )
     )
     const result = pages.flatMap(d => d?.results || [])
-    cSet(key, result)
+    if (result.length) cSet(key, result)
     return result
   } catch { return [] }
 }
