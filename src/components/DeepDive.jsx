@@ -631,6 +631,20 @@ function VerdictCard({ result, ticker }) {
   )
 }
 
+/* ── AI Brief cache (2-hour TTL, keyed by ticker) ─────────────── */
+function getAiCache(ticker) {
+  try {
+    const raw = localStorage.getItem(`pulse_ai_${ticker}`)
+    if (!raw) return null
+    const { summary, ts } = JSON.parse(raw)
+    if (Date.now() - ts > 2 * 60 * 60 * 1000) return null
+    return summary
+  } catch { return null }
+}
+function setAiCache(ticker, summary) {
+  try { localStorage.setItem(`pulse_ai_${ticker}`, JSON.stringify({ summary, ts: Date.now() })) } catch {}
+}
+
 /* ── Main ─────────────────────────────────────────────────────── */
 export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate }) {
   const [input,  setInput]  = useState(initialTicker || 'AAPL')
@@ -650,12 +664,18 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
   const [redditLoading, setRedditLoading] = useState(false)
   const [aiSummary,     setAiSummary]     = useState(null)
   const [aiLoading,     setAiLoading]     = useState(false)
+  const aiTickerRef = useRef('')
 
   useEffect(() => {
     if (initialTicker) { const t = initialTicker.toUpperCase(); setInput(t); setTicker(t); fetch(t) }
   }, [initialTicker, diveVersion])
 
-  useEffect(() => { setDiveTab('overview'); setAiSummary(null) }, [ticker])
+  useEffect(() => {
+    setDiveTab('overview')
+    const cached = getAiCache(ticker)
+    setAiSummary(cached || null)
+    aiTickerRef.current = ''
+  }, [ticker])
 
   // Re-score whenever base data or smart money updates
   useEffect(() => {
@@ -694,6 +714,47 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
       .then(d => setRedditTop(Array.isArray(d) ? d : []))
       .finally(() => setRedditLoading(false))
   }, [])
+
+  // Auto-trigger AI Brief when result is ready (cache-first, 2hr TTL)
+  useEffect(() => {
+    if (!result || !data || !ticker || aiLoading) return
+    if (aiTickerRef.current === ticker) return  // already fetched/fetching for this ticker
+    const cached = getAiCache(ticker)
+    if (cached) { setAiSummary(cached); aiTickerRef.current = ticker; return }
+    aiTickerRef.current = ticker
+    setAiLoading(true)
+    const earn = data.earnings || []
+    const withEst = earn.filter(q => q.estimate != null && q.actual != null)
+    const beats = withEst.filter(q => q.actual > q.estimate)
+    const beatRate = withEst.length ? Math.round(beats.length / withEst.length * 100) : null
+    let beatStreak = 0
+    for (const q of withEst) { if (q.actual > q.estimate) beatStreak++; else break }
+    const rc = data.rec?.current || {}
+    const tot = (rc.strongBuy||0)+(rc.buy||0)+(rc.hold||0)+(rc.sell||0)+(rc.strongSell||0)
+    const analystBull = tot > 0 ? Math.round(((rc.strongBuy||0)+(rc.buy||0))/tot*100) : null
+    const ins = data.insider || []
+    const insiderNet = ins.filter(x=>x.isBuy===true).length - ins.filter(x=>x.isBuy===false).length
+    const mt2 = data.metrics || {}
+    fetchAISummary(ticker, {
+      company:    data.profile?.name || ticker,
+      score:      result.pct != null ? Math.round(result.pct) : null,
+      verdict:    result.verdict || '',
+      sector:     data.profile?.finnhubIndustry || '',
+      pe:         result.pe != null ? result.pe.toFixed(1) : null,
+      growth:     mt2.revenueGrowthYoY != null ? parseFloat(mt2.revenueGrowthYoY.toFixed(1)) : null,
+      rsi:        result.mom?.rsi ?? null,
+      ma50:       data.candles?.ma50 || null,
+      price:      data.quote?.c ? parseFloat(data.quote.c.toFixed(2)) : null,
+      weekHigh52: data.quote?.yearHigh || null,
+      weekLow52:  data.quote?.yearLow || null,
+      beatRate, beatStreak, analystBull,
+      insiderNet: ins.length ? insiderNet : null,
+      earningsDate: data.ec?.date || null,
+      headlines: (data.news || []).slice(0, 3).map(n => n.title).filter(Boolean),
+    }).then(s => {
+      if (s) { setAiSummary(s); setAiCache(ticker, s) }
+    }).catch(() => {}).finally(() => setAiLoading(false))
+  }, [result])
 
   const handleAnalyze=()=>{ const t=input.trim().toUpperCase(); if(!t)return; setTicker(t); fetch(t) }
   const handleRefresh = useCallback(async () => { if(ticker) { await fetch(ticker) } }, [ticker, fetch])
@@ -848,66 +909,21 @@ export default function DeepDive({ initialTicker, diveVersion = 0, onNavigate })
               <SectionHeader>Analysis Brief</SectionHeader>
               <AnalysisBrief ticker={ticker} company={data.profile?.name||ticker} sector={data.profile?.finnhubIndustry||''} price={price} result={result} ma50={ma50} metrics={mt} news={data.news} rec={data.rec} earn={data.earnings} insider={data.insider||[]}/>
 
-              {/* AI Brief — user-triggered */}
+              {/* AI Brief — auto-generated, 2hr cache */}
               <div style={{marginBottom:14}}>
-                {!aiSummary && !aiLoading && (
-                  <button className="btn btn-ghost" style={{width:'100%',fontSize:'0.74rem',padding:'10px 0',borderStyle:'dashed',borderColor:'rgba(0,229,255,0.2)',color:'#555'}}
-                    onClick={async()=>{
-                      setAiLoading(true)
-                      const headlines=(data.news||[]).slice(0,3).map(n=>n.title).filter(Boolean)
-                      // Compute earnings stats for the AI
-                      const earn=data.earnings||[]
-                      const withEst=earn.filter(q=>q.estimate!=null&&q.actual!=null)
-                      const beats=withEst.filter(q=>q.actual>q.estimate)
-                      const beatRate=withEst.length?Math.round(beats.length/withEst.length*100):null
-                      let beatStreak=0
-                      for(const q of withEst){if(q.actual>q.estimate)beatStreak++;else break}
-                      // Analyst bullish %
-                      const rc=data.rec?.current||{}
-                      const tot=(rc.strongBuy||0)+(rc.buy||0)+(rc.hold||0)+(rc.sell||0)+(rc.strongSell||0)
-                      const analystBull=tot>0?Math.round(((rc.strongBuy||0)+(rc.buy||0))/tot*100):null
-                      // Insider net
-                      const ins=data.insider||[]
-                      const insiderNet=ins.filter(x=>x.isBuy===true).length - ins.filter(x=>x.isBuy===false).length
-                      const s=await fetchAISummary(ticker,{
-                        company:      data.profile?.name||ticker,
-                        score:        result?.pct!=null?Math.round(result.pct):null,
-                        verdict:      result?.verdict||'',
-                        sector:       data.profile?.finnhubIndustry||'',
-                        pe:           result?.pe!=null?result.pe.toFixed(1):null,
-                        growth:       mt.revenueGrowthYoY!=null?parseFloat(mt.revenueGrowthYoY.toFixed(1)):null,
-                        rsi:          result?.mom?.rsi??null,
-                        ma50:         ma50||null,
-                        price:        price?parseFloat(price.toFixed(2)):null,
-                        weekHigh52:   data.quote?.yearHigh||null,
-                        weekLow52:    data.quote?.yearLow||null,
-                        beatRate,
-                        beatStreak,
-                        analystBull,
-                        insiderNet:   ins.length?insiderNet:null,
-                        earningsDate: data.ec?.date||null,
-                        headlines,
-                      })
-                      setAiSummary(s||'AI unavailable — check ANTHROPIC_KEY is set in Vercel.')
-                      setAiLoading(false)
-                    }}>
-                    ✨ Get AI Brief
-                  </button>
-                )}
-                {aiLoading&&(
-                  <div style={{padding:'12px 16px',background:'rgba(0,229,255,0.04)',border:'1px solid rgba(0,229,255,0.15)',borderRadius:10,fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#555',textAlign:'center'}}>
+                {aiLoading && (
+                  <div style={{padding:'14px 16px',background:'rgba(0,229,255,0.04)',border:'1px solid rgba(0,229,255,0.12)',borderRadius:10,fontFamily:'var(--font-mono)',fontSize:'0.68rem',color:'#444',textAlign:'center',letterSpacing:0.5}}>
                     ✨ Generating AI brief…
                   </div>
                 )}
-                {aiSummary&&(()=>{
-                  // Split into sentences for better readability
-                  const sentences=aiSummary.split(/(?<=[.!?])\s+/).filter(s=>s.trim())
-                  const labels=['Signal','Technical','Fundamental','Risk','Watch']
-                  return(
+                {aiSummary && !aiLoading && (()=>{
+                  const sentences = aiSummary.split(/(?<=[.!?])\s+/).filter(s => s.trim())
+                  const labels = ['Signal','Technical','Fundamental','Risk','Watch']
+                  return (
                     <div style={{background:'rgba(0,229,255,0.04)',border:'1px solid rgba(0,229,255,0.18)',borderRadius:12,overflow:'hidden'}}>
-                      <div style={{padding:'10px 16px',borderBottom:'1px solid rgba(0,229,255,0.1)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div style={{padding:'10px 16px',borderBottom:'1px solid rgba(0,229,255,0.08)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                         <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:CYAN,letterSpacing:1}}>✨ AI BRIEF · claude haiku</div>
-                        <button onClick={()=>setAiSummary(null)} style={{background:'transparent',border:'none',color:'#444',fontFamily:'var(--font-mono)',fontSize:'0.62rem',cursor:'pointer',padding:'0 4px'}}>✕</button>
+                        <button onClick={()=>{ setAiSummary(null); aiTickerRef.current='' }} style={{background:'transparent',border:'none',color:'#444',fontFamily:'var(--font-mono)',fontSize:'0.62rem',cursor:'pointer',padding:'0 4px'}}>✕</button>
                       </div>
                       {sentences.map((s,i)=>(
                         <div key={i} style={{padding:'10px 16px',borderBottom:i<sentences.length-1?'1px solid rgba(255,255,255,0.04)':'none',display:'flex',gap:10,alignItems:'flex-start'}}>
