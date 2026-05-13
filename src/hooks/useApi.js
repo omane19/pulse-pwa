@@ -1292,19 +1292,39 @@ export async function fetchMacroTicker() {
   const allSymbols = [...new Set(
     Object.values(MACRO_SECTIONS).flatMap(sec => sec.items.map(i => i.s))
   )]
-  // v3 /quote/SYM1,SYM2 supports comma-separated in path — one call instead of N
-  const d = await fmpv3(`/quote/${allSymbols.join(',')}`, 300000)
-  const arr = Array.isArray(d) ? d : (d ? [d] : [])
   const map = {}
-  arr.forEach(q => {
-    if (q?.symbol && q.price != null) {
-      map[q.symbol] = {
-        price:     q.price,
-        changePct: q.changesPercentage ?? q.changePercentage ?? 0,
-        change:    q.change ?? 0,
+
+  const toMap = arr => {
+    if (!Array.isArray(arr)) return
+    arr.forEach(q => {
+      if (q?.symbol && q.price != null) {
+        map[q.symbol] = {
+          price:     q.price,
+          changePct: q.changesPercentage ?? q.changePercentage ?? 0,
+          change:    q.change ?? 0,
+        }
       }
-    }
-  })
+    })
+  }
+
+  // Try v3 batch first (one call)
+  const batch = await fmpv3(`/quote/${allSymbols.join(',')}`, 300000)
+  toMap(Array.isArray(batch) ? batch : (batch ? [batch] : []))
+
+  // If batch missed symbols, fill gaps with individual stable calls
+  const missing = allSymbols.filter(s => !map[s])
+  if (missing.length) {
+    const fills = await Promise.allSettled(missing.map(s => fmp(`/quote?symbol=${s}`, 300000)))
+    fills.forEach(r => {
+      if (r.status === 'fulfilled') {
+        const q = Array.isArray(r.value) ? r.value[0] : r.value
+        if (q?.symbol && q.price != null) {
+          map[q.symbol] = { price: q.price, changePct: q.changesPercentage ?? q.changePercentage ?? 0, change: q.change ?? 0 }
+        }
+      }
+    })
+  }
+
   return map
 }
 
@@ -1325,10 +1345,24 @@ export const SECTOR_ETFS = [
 
 export async function fetchSectorPerformance() {
   const symbols = SECTOR_ETFS.map(s => s.s).join(',')
-  const d = await fmpv3(`/quote/${symbols}`, 300000)
-  const arr = Array.isArray(d) ? d : (d ? [d] : [])
   const bySymbol = {}
+
+  const batch = await fmpv3(`/quote/${symbols}`, 300000)
+  const arr = Array.isArray(batch) ? batch : (batch ? [batch] : [])
   arr.forEach(q => { if (q?.symbol) bySymbol[q.symbol] = q })
+
+  // Fill any missing with individual stable calls
+  const missing = SECTOR_ETFS.filter(e => !bySymbol[e.s])
+  if (missing.length) {
+    const fills = await Promise.allSettled(missing.map(e => fmp(`/quote?symbol=${e.s}`, 300000)))
+    fills.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        const q = Array.isArray(r.value) ? r.value[0] : r.value
+        if (q?.symbol) bySymbol[q.symbol] = q
+      }
+    })
+  }
+
   return SECTOR_ETFS.map(sec => ({
     ...sec,
     changePct: bySymbol[sec.s]?.changesPercentage ?? bySymbol[sec.s]?.changePercentage ?? null,

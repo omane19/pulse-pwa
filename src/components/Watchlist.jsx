@@ -346,8 +346,8 @@ export default function Watchlist({ onNavigateToDive }) {
     <PullToRefresh onRefresh={handleRefresh} enabled={list.length > 0}>
     <div className="page" style={{ paddingTop: 0 }}>
 
-      {/* Market overview — sticky at top */}
-      <div style={{ margin: '-16px -16px 0' }}>
+      {/* Market overview */}
+      <div style={{ margin: '0 -16px' }}>
         <MacroTicker />
       </div>
 

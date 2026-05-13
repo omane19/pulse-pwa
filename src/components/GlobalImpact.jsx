@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { fetchQuote, fetchRegionNews, fetchTickerLite, fetchMarketMovers, fetchMacroLive } from '../hooks/useApi.js'
+import { fetchQuote, fetchRegionNews, fetchTickerLite, fetchMacroLive } from '../hooks/useApi.js'
 import { scoreAsset } from '../utils/scoring.js'
 import { PullToRefresh } from './shared.jsx'
 import { GLOBAL_CHAINS, TICKER_NAMES } from '../utils/constants.js'
@@ -322,7 +322,6 @@ export default function GlobalImpact({ onNavigate }) {
   const [prices, setPrices]           = useState({})
   const [loadingPrices, setLoadingPrices] = useState(false)
   const [tickerScores, setTickerScores]   = useState({})
-  const [movers,    setMovers]            = useState(null)
   const [macroData, setMacroData]         = useState(null)
   const [macroTab,  setMacroTab]          = useState('sectors') // sectors | calendar | yield | macro
   const [notifPerm, setNotifPerm] = React.useState(() =>
@@ -350,10 +349,8 @@ export default function GlobalImpact({ onNavigate }) {
     setPrices(map)
     setLoadingPrices(false)
 
-    // Fetch macro data and movers in parallel
-    const [macro, mv] = await Promise.all([fetchMacroLive(), fetchMarketMovers()])
+    const macro = await fetchMacroLive()
     if (macro) setMacroData(macro)
-    if (mv)    setMovers(mv)
 
     // Background: mini scores for affected tickers
     const allTickers = [...new Set(GLOBAL_CHAINS.flatMap(c => c.affects))]
@@ -384,35 +381,6 @@ export default function GlobalImpact({ onNavigate }) {
   return (
     <PullToRefresh onRefresh={loadAll}>
     <div className="page">
-
-      {/* Market Movers */}
-      {movers && (movers.gainers?.length > 0 || movers.losers?.length > 0) && (
-        <div className="card" style={{marginBottom:16,padding:'14px 16px'}}>
-          <div style={{fontSize:'0.6rem',fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',color:G1,marginBottom:12}}>📈 Market Movers Today</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-            <div>
-              <div style={{fontSize:'0.6rem',color:GREEN,letterSpacing:1,marginBottom:8}}>TOP GAINERS</div>
-              {movers.gainers.slice(0,5).map((s,i) => (
-                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:i<4?`1px solid ${G4}`:'none'}}>
-                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'#fff',cursor:'pointer'}}
-                    onClick={() => onNavigate && onNavigate(s.ticker)}>{s.ticker}</div>
-                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:GREEN}}>+{s.changePct?.toFixed(2)}%</div>
-                </div>
-              ))}
-            </div>
-            <div>
-              <div style={{fontSize:'0.6rem',color:RED,letterSpacing:1,marginBottom:8}}>TOP LOSERS</div>
-              {movers.losers.slice(0,5).map((s,i) => (
-                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:i<4?`1px solid ${G4}`:'none'}}>
-                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:'#fff',cursor:'pointer'}}
-                    onClick={() => onNavigate && onNavigate(s.ticker)}>{s.ticker}</div>
-                  <div style={{fontFamily:'var(--font-mono)',fontSize:'0.7rem',color:RED}}>{s.changePct?.toFixed(2)}%</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Macro sub-tabs */}
       {macroData && (() => {
