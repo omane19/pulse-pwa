@@ -1292,8 +1292,8 @@ export async function fetchMacroTicker() {
   const allSymbols = [...new Set(
     Object.values(MACRO_SECTIONS).flatMap(sec => sec.items.map(i => i.s))
   )]
-  // Single batch call instead of N individual calls — avoids proxy overload
-  const d = await fmp(`/quote?symbol=${allSymbols.join(',')}`, 300000)
+  // v3 /quote/SYM1,SYM2 supports comma-separated in path — one call instead of N
+  const d = await fmpv3(`/quote/${allSymbols.join(',')}`, 300000)
   const arr = Array.isArray(d) ? d : (d ? [d] : [])
   const map = {}
   arr.forEach(q => {
@@ -1325,7 +1325,7 @@ export const SECTOR_ETFS = [
 
 export async function fetchSectorPerformance() {
   const symbols = SECTOR_ETFS.map(s => s.s).join(',')
-  const d = await fmp(`/quote?symbol=${symbols}`, 300000)
+  const d = await fmpv3(`/quote/${symbols}`, 300000)
   const arr = Array.isArray(d) ? d : (d ? [d] : [])
   const bySymbol = {}
   arr.forEach(q => { if (q?.symbol) bySymbol[q.symbol] = q })

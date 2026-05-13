@@ -379,33 +379,20 @@ export default function Watchlist({ onNavigateToDive }) {
         </div>
       )}
 
+      {/* My Watchlist section header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8, marginTop:4 }}>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.58rem', color:'#444', letterSpacing:'1.5px', textTransform:'uppercase' }}>
+          👁 My Watchlist {list.length > 0 && <span style={{ color:'#333' }}>· {list.length}</span>}
+        </div>
+        {loading && <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.56rem', color:'#444' }}>scoring {progress}%…</span>}
+      </div>
+
       {list.length === 0 ? (
-        <div style={{ textAlign:'center', padding:'40px 0', color:G1 }}>
-          <div style={{ fontSize:'3rem', marginBottom:12 }}>👁</div>
-          <p style={{ fontSize:'0.86rem', lineHeight:1.8 }}>Your watchlist is empty.<br />Tap <strong style={{ color:CYAN }}>+</strong> to add tickers.</p>
+        <div style={{ textAlign:'center', padding:'30px 0', color:G1 }}>
+          <p style={{ fontSize:'0.82rem', lineHeight:1.8 }}>Nothing here yet.<br />Tap <strong style={{ color:CYAN }}>+</strong> to add tickers.</p>
         </div>
       ) : (
         <>
-          <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-            <button className="btn btn-primary" onClick={handleRefresh} disabled={loading} style={{ flex:1 }}>
-              {loading ? `Scoring ${progress}%…` : `Score All (${list.length} ${list.length === 1 ? 'ticker' : 'tickers'})`}
-            </button>
-            <button onClick={async () => {
-              if (permission === 'granted') { setToast('🔔 Alerts already enabled'); return }
-              const p = await requestPermission()
-              setToast(p === 'granted' ? '🔔 Alerts ON' : '🔕 Blocked in browser settings')
-            }} title="Enable alerts" style={{
-              background: permission === 'granted' ? 'rgba(0,200,5,0.12)' : '#1a1a1a',
-              border: `1px solid ${permission === 'granted' ? '#00C80550' : '#333'}`,
-              color: permission === 'granted' ? '#00C805' : '#555', borderRadius: 10,
-              padding: '0 14px', fontSize:'1rem', cursor:'pointer'
-            }}>
-              {permission === 'granted' ? '🔔' : '🔕'}
-            </button>
-          </div>
-
-          {loading && <LoadingBar progress={progress} text={`Scoring watchlist… ${progress}%`} />}
-
           {results.length > 1 && (
             <div style={{ display:'flex', gap:6, marginBottom:10 }}>
               {[['score','Score ↓'],['verdict','Verdict'],['alpha','A–Z'],['pnl','P&L ↓']].map(([v,l]) => (
@@ -417,22 +404,6 @@ export default function Watchlist({ onNavigateToDive }) {
                     color: sortBy===v ? '#00E5FF' : '#666' }}>
                   {l}
                 </button>
-              ))}
-            </div>
-          )}
-
-          {results.length > 0 && (
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:12 }}>
-              {[
-                ['Watching', list.length, null],
-                ['BUY', results.filter(r => r.result.verdict === 'BUY').length, GREEN],
-                ['HOLD', results.filter(r => r.result.verdict === 'HOLD').length, YELLOW],
-                ['Avg Score', `${Math.round(results.reduce((s,r) => s + r.result.pct, 0) / results.length)}`, null],
-              ].map(([l, v, c]) => (
-                <div key={l} className="metric-cell" style={{ flex:1, minWidth:60 }}>
-                  <div className="metric-label">{l}</div>
-                  <div className="metric-value" style={c ? { color:c } : {}}>{v}</div>
-                </div>
               ))}
             </div>
           )}
